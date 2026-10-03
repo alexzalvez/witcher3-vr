@@ -40739,8 +40739,6 @@ void render_openxr_test_frame(
     }
     // [PURGE:AFW] Neutralizado: se usa Stereo puro + SSW de Virtual Desktop
     const bool puredark_afw_gameplay_frame = false;
-            g_automatic_full_vr_camera_active.load(
-                std::memory_order_acquire));
     static bool previous_puredark_afw_gameplay_frame{};
     if (previous_puredark_afw_gameplay_frame &&
         !puredark_afw_gameplay_frame) {
