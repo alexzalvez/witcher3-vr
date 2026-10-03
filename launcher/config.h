@@ -79,7 +79,7 @@ struct LauncherState {
     CameraFollowPolicy camera_follow_policy{CameraFollowPolicy::HorseBoatOnly};
     bool hide_static_hud_outside_combat{false};
     bool fast_movement_transitions{true};
-    bool native_stereo{false};
+    bool native_stereo{true};
     bool fullscreen_projection{false};
     bool alternate_presentation_resize{false};
     bool diagnostic_logging{false};
