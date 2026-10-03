@@ -267,18 +267,19 @@ std::string ReadString(const IniDocument& doc, const char* section,
 }
 
 CinemaAspect ReadCinemaAspect(const IniDocument& ini) {
-    const bool legacy_five_four = ReadBool(
-        ini, "openxr", "cinema_5x4", true);
-    const auto value = ReadString(
-        ini, "openxr", "cinema_aspect",
-        legacy_five_four ? "5x4" : "4x3");
-    return value == "4x3" || value == "4:3"
-        ? CinemaAspect::FourThree
-        : CinemaAspect::FiveFour;
+    const auto value = ini.Get("openxr", "cinema_aspect").value_or("16x9");
+    if (value == "16x9" || value == "16:9") return CinemaAspect::SixteenNine;
+    if (value == "4x3" || value == "4:3") return CinemaAspect::FourThree;
+    return CinemaAspect::FiveFour;
 }
 
 const char* CinemaAspectIniValue(CinemaAspect aspect) {
-    return aspect == CinemaAspect::FourThree ? "4x3" : "5x4";
+    switch (aspect) {
+        case CinemaAspect::SixteenNine: return "16x9";
+        case CinemaAspect::FourThree: return "4x3";
+        case CinemaAspect::FiveFour: return "5x4";
+    }
+    return "16x9";
 }
 
 void MigrateConfigurationToV9(IniDocument& ini) {
