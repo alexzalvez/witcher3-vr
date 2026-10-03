@@ -17,8 +17,9 @@ enum class RenderMode {
 };
 
 enum class CinemaAspect {
-    FiveFour,
+    SixteenNine,
     FourThree,
+    FiveFour,
 };
 
 enum class CameraFollowPolicy {
@@ -51,37 +52,37 @@ struct ModeSettings {
 };
 
 struct LauncherState {
-    RenderMode mode{RenderMode::AerAfwDlss};
-    bool resolution_auto{true};
-    int width{2688};
-    int height{2784};
-    int dlss_quality{3};
-    bool ray_tracing{};
-    int hud_convergence_delta{-20};
+    RenderMode mode{RenderMode::StereoDlssSequential};
+    bool resolution_auto{false};
+    int width{2016};
+    int height{2112};
+    int dlss_quality{1};
+    bool ray_tracing{false};
+    int hud_convergence_delta{0};
     float presentation_scale{1.0f};
-    float menu_scale{0.85f};
-    float cinema_scale{0.9f};
-    CinemaAspect cinema_aspect{CinemaAspect::FiveFour};
+    float menu_scale{1.0f};
+    float cinema_scale{1.0f};
+    CinemaAspect cinema_aspect{CinemaAspect::SixteenNine};
     float cinema_hud_scale{1.30f};
-    int cinema_hud_convergence_offset{};
+    int cinema_hud_convergence_offset{-36};
     float full_vr_hud_scale{1.00f};
-    int full_vr_hud_convergence_offset{};
+    int full_vr_hud_convergence_offset{-36};
     float near_view{0.75f};
-    bool vertical_pitch_enabled{};
-    bool cinema_full_vr{true};
-    bool steady_icons{};
-    bool first_person_gamepad_head_follow{};
+    bool vertical_pitch_enabled{false};
+    bool cinema_full_vr{false};
+    bool steady_icons{false};
+    bool first_person_gamepad_head_follow{false};
     int first_person_snap_turn_degrees{45};
     bool first_person_combat_exit{false};
     bool first_person_strafe{true};
     bool first_person_anchor_smoothing{true};
     CameraFollowPolicy camera_follow_policy{CameraFollowPolicy::HorseBoatOnly};
-    bool hide_static_hud_outside_combat{};
+    bool hide_static_hud_outside_combat{false};
     bool fast_movement_transitions{true};
-    bool native_stereo{true};
-    bool fullscreen_projection{};
-    bool alternate_presentation_resize{};
-    bool diagnostic_logging{};
+    bool native_stereo{false};
+    bool fullscreen_projection{false};
+    bool alternate_presentation_resize{false};
+    bool diagnostic_logging{false};
 };
 
 struct CompatibilityWarnings {
