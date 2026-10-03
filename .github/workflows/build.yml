@@ -32,7 +32,7 @@ jobs:
       - name: Package Release ZIP
         shell: powershell
         run: |
-          powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version V1267
+          pwsh -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version V1267 -OutputDirectory "$PWD/dist"
 
       - name: Upload Mod Package
         uses: actions/upload-artifact@v4
