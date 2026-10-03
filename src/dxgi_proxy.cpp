@@ -31199,12 +31199,15 @@ void __fastcall hook_engine_view_rebuild(float* view) {
     const bool coherent_native_hmd_pose = g_engine_factory_eye >= 0 &&
         native_canted_eye_pose_available(
             camera_hmd_pose, camera_hmd_pose_eye);
-    const float camera_hmd_yaw = coherent_native_hmd_pose
-        ? camera_hmd_pose.yaw_degrees : g_hmd_yaw_degrees;
-    const float camera_hmd_pitch = coherent_native_hmd_pose
-        ? camera_hmd_pose.pitch_degrees : g_hmd_pitch_degrees;
-    const float camera_hmd_roll = coherent_native_hmd_pose
-        ? camera_hmd_pose.roll_degrees : g_hmd_roll_degrees;
+    // [FIX:BUG-A] En menús y mapa, congelamos la rotación interna del motor a 0
+    // para evitar que la cámara interna contra-rote dentro del panel espacial de OpenXR.
+    const bool is_in_menu = g_engine_menu_state.load(std::memory_order_relaxed) != 0;
+    const float camera_hmd_yaw = is_in_menu ? 0.0f : (coherent_native_hmd_pose
+        ? camera_hmd_pose.yaw_degrees : g_hmd_yaw_degrees);
+    const float camera_hmd_pitch = is_in_menu ? 0.0f : (coherent_native_hmd_pose
+        ? camera_hmd_pose.pitch_degrees : g_hmd_pitch_degrees);
+    const float camera_hmd_roll = is_in_menu ? 0.0f : (coherent_native_hmd_pose
+        ? camera_hmd_pose.roll_degrees : g_hmd_roll_degrees);
     const float camera_hmd_position_x = coherent_native_hmd_pose
         ? camera_hmd_pose.position_x : g_hmd_position_x;
     const float camera_hmd_position_y = coherent_native_hmd_pose
@@ -36977,6 +36980,16 @@ bool composite_mode3_hud_into_projection_image(
                     submitted_views[eye].fov, hud_size,
                     inverse_hud_distance, hud_clip_positions[eye]);
     }
+    // [FEATURE:WORLD-LOCKED-GAMEPLAY-HUD]
+    // Anclaje persistente del HUD en el espacio LOCAL (desacoplado del giro de la cabeza)
+    static XrPosef s_gameplay_hud_anchor{};
+    static bool s_gameplay_hud_anchor_valid{};
+    
+    // Si se pulsa F9 para recentrar, re-anclamos el HUD frente a la nueva orientación
+    if (!g_hmd_center_valid.load(std::memory_order_relaxed)) {
+        s_gameplay_hud_anchor_valid = false;
+    }
+
     if (cinema_projection) {
         bool panel_geometry_valid = true;
         for (uint32_t eye = 0; eye < 2; ++eye) {
@@ -36991,52 +37004,52 @@ bool composite_mode3_hud_into_projection_image(
         if (!panel_geometry_valid) {
             return false;
         }
-        static std::atomic<uint32_t> cinema_projection_hud_logs{};
-        if (take_bounded_log_slot(cinema_projection_hud_logs, 4)) {
-            log_line(
-                "Cinema retained HUD projection pair=%llu shift=%d size=%.3f panel=%.3fx%.3f aspect=%.6f automatic=%d",
-                static_cast<unsigned long long>(scene_pair_id),
-                reference_left_eye_shift, hud_size,
-                cinema_parameters->panel_width,
-                cinema_parameters->panel_height,
-                cinema_parameters->aspect_ratio,
-                cinema_parameters->automatic ? 1 : 0);
+    } else if (headset_projection && !automatic_full_vr_cutscene) {
+        // En juego normal: anclamos el HUD general como un panel frontal en espacio LOCAL
+        if (!s_gameplay_hud_anchor_valid && submitted_views != nullptr) {
+            const auto& tracked_orientation = exact_eye_views[0].pose.orientation;
+            const float yaw_twist_length = sqrtf(
+                tracked_orientation.y * tracked_orientation.y +
+                tracked_orientation.w * tracked_orientation.w);
+            
+            // Nivelamos pitch y roll a 0 para que la pantalla quede siempre vertical
+            s_gameplay_hud_anchor.orientation = yaw_twist_length > 0.000001f
+                ? XrQuaternionf{0.0f, tracked_orientation.y / yaw_twist_length, 0.0f, tracked_orientation.w / yaw_twist_length}
+                : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+
+            const XrVector3f head_pos{
+                (exact_eye_views[0].pose.position.x + exact_eye_views[1].pose.position.x) * 0.5f,
+                (exact_eye_views[0].pose.position.y + exact_eye_views[1].pose.position.y) * 0.5f,
+                (exact_eye_views[0].pose.position.z + exact_eye_views[1].pose.position.z) * 0.5f};
+
+            // Distancia del panel HUD: ~1.8 metros al frente
+            const float hud_distance_m = g_config.menu_distance > 0.1f ? g_config.menu_distance : 1.8f;
+            const auto hud_offset = rotate_vector(
+                s_gameplay_hud_anchor.orientation,
+                XrVector3f{0.0f, 0.0f, -hud_distance_m});
+
+            s_gameplay_hud_anchor.position = {
+                head_pos.x + hud_offset.x,
+                head_pos.y + hud_offset.y,
+                head_pos.z + hud_offset.z};
+            s_gameplay_hud_anchor_valid = true;
         }
-    } else if (headset_projection) {
-        // Log gameplay and Full VR independently. The old shared four-sample
-        // budget was exhausted during gameplay before a cutscene could prove
-        // which Full-VR scale, shift and physical distance were consumed.
-        static std::atomic<uint8_t> headset_projection_route_log_mask{};
-        const uint8_t route_bit = automatic_full_vr_cutscene ? 0x2u : 0x1u;
-        if ((headset_projection_route_log_mask.fetch_or(
-                route_bit, std::memory_order_relaxed) & route_bit) == 0) {
-            const float hud_distance = fabsf(inverse_hud_distance) > 1.0e-6f
-                ? 1.0f / inverse_hud_distance
-                : INFINITY;
-            log_line(
-                "HUD Quest-reference plane active pair=%llu route=%s "
-                "reference_shift=%d size=%.3f distance_m=%.4f "
-                "baseline_m=%.6f cant_degrees=%.4f "
-                "rect0=%d,%d %dx%d rect1=%d,%d %dx%d",
-                static_cast<unsigned long long>(scene_pair_id),
-                automatic_full_vr_cutscene ? "full_vr" : "gameplay",
-                reference_left_eye_shift, hud_size, hud_distance,
-                hud_eye_geometry.baseline_m,
-                hud_eye_geometry.cant_degrees,
-                submitted_views[0].subImage.imageRect.offset.x,
-                submitted_views[0].subImage.imageRect.offset.y,
-                submitted_views[0].subImage.imageRect.extent.width,
-                submitted_views[0].subImage.imageRect.extent.height,
-                submitted_views[1].subImage.imageRect.offset.x,
-                submitted_views[1].subImage.imageRect.offset.y,
-                submitted_views[1].subImage.imageRect.extent.width,
-                submitted_views[1].subImage.imageRect.extent.height);
+
+        // Proyectamos el HUD general sobre el panel espacial desacoplado
+        const float panel_w = 2.4f * hud_size;
+        const float panel_h = 1.35f * hud_size;
+        for (uint32_t eye = 0; eye < 2; ++eye) {
+            build_anchored_panel_clip_positions(
+                exact_eye_views[eye],
+                s_gameplay_hud_anchor_valid ? s_gameplay_hud_anchor : exact_eye_views[eye].pose,
+                panel_w, panel_h,
+                hud_clip_positions[eye]);
         }
     } else {
         constexpr std::array<float, 16> kLegacyFullscreenClip{{
-            -1.0f, 1.0f, 0.5f, 1.0f,
+            -1.0f, 1.0f, 0.5f, 1.0f, 
              1.0f, 1.0f, 0.5f, 1.0f,
-            -1.0f,-1.0f, 0.5f, 1.0f,
+            -1.0f,-1.0f, 0.5f, 1.0f, 
              1.0f,-1.0f, 0.5f, 1.0f}};
         hud_clip_positions[0] = kLegacyFullscreenClip;
         hud_clip_positions[1] = kLegacyFullscreenClip;
@@ -40724,11 +40737,8 @@ void render_openxr_test_frame(
             fullscreen_menu ? 1 : 0,
             g_force_mono_cinema.load(std::memory_order_relaxed) ? 1 : 0);
     }
-    const bool puredark_afw_gameplay_frame =
-        puredark_afw_mode3_aer_any_route_configured() &&
-        !fullscreen_menu && !cinema_mode && !loading_video &&
-        !(!g_force_mono_cinema.load(std::memory_order_relaxed) &&
-            g_config.cinema_full_vr &&
+    // [PURGE:AFW] Neutralizado: se usa Stereo puro + SSW de Virtual Desktop
+    const bool puredark_afw_gameplay_frame = false;
             g_automatic_full_vr_camera_active.load(
                 std::memory_order_acquire));
     static bool previous_puredark_afw_gameplay_frame{};
@@ -43550,15 +43560,9 @@ void render_openxr_test_frame(
     menu_layer.subImage.swapchain = g_xr_eye_swapchains[0].handle;
     menu_layer.subImage.imageRect = menu_image_rect;
     menu_layer.subImage.imageArrayIndex = 0;
-    // The frontend can report a formally valid LOCAL pose at floor height
-    // before REDengine's stereo renderer is active. Keep only that startup
-    // menu in VIEW space; pause/inventory menus remain LOCAL world-locked.
-    const bool startup_frontend_panel = fullscreen_menu &&
-        !g_engine_dual_render_active.load(std::memory_order_relaxed);
-    const int spatial_panel_kind = startup_frontend_panel
-        ? 0
-        : (fullscreen_menu ? 1
-        : (cinema_panel ? 2 : 0));
+    // [FIX:BUG-B] Menús siempre anclados en espacio LOCAL desde el arranque.
+    // Solo si el visor no reporta tracking válido todavía se usa VIEW como fallback temporal.
+    const int spatial_panel_kind = fullscreen_menu ? 1 : (cinema_panel ? 2 : 0);
     static int anchored_panel_kind{};
     static bool anchored_panel_pose_valid{};
     static XrPosef anchored_panel_pose{};
