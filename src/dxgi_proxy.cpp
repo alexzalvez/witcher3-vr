@@ -239,7 +239,7 @@ struct Config {
     float hud_size{1.0f};
     float menu_scale{0.7f};
     float cinema_scale{0.7f};
-    float cinema_aspect_ratio{5.0f / 4.0f};
+    float cinema_aspect_ratio{16.0f / 9.0f};
     bool cinema_full_vr{false};
     bool steady_icons{false};
     float menu_distance{1.5f};
@@ -296,7 +296,7 @@ struct Config {
     bool engine_dual_render_probe{false};
     bool engine_dual_render_start{false};
     bool engine_sync_swap_eyes{false};
-    bool engine_menu_state_probe{false};
+    bool engine_menu_state_probe{true};
     bool engine_animation_hmd_frustum{false};
     bool engine_animated_component_visible{true};
     bool engine_taau_reverse_eye_order{false};
@@ -11264,12 +11264,13 @@ void load_config() {
         const bool legacy_cinema_5x4 = read_ini_bool(
             "openxr", "cinema_5x4", true);
         const auto cinema_aspect = read_ini_string(
-            "openxr", "cinema_aspect",
-            legacy_cinema_5x4 ? "5x4" : "4x3");
+            "openxr", "cinema_aspect", "16x9");
         g_config.cinema_aspect_ratio =
-            cinema_aspect == "4x3" || cinema_aspect == "4:3"
-            ? 4.0f / 3.0f
-            : 5.0f / 4.0f;
+            cinema_aspect == "16x9" || cinema_aspect == "16:9"
+            ? 16.0f / 9.0f
+            : (cinema_aspect == "4x3" || cinema_aspect == "4:3"
+                ? 4.0f / 3.0f
+                : 5.0f / 4.0f);
         g_config.cinema_full_vr = read_ini_bool(
             "openxr", "cinema_full_vr", false);
         g_config.steady_icons = read_ini_bool(
@@ -11374,7 +11375,7 @@ void load_config() {
         g_config.engine_dual_render_probe = read_ini_bool("engine", "dual_render_probe", false);
         g_config.engine_dual_render_start = read_ini_bool("engine", "dual_render_start", false);
         g_config.engine_sync_swap_eyes = read_ini_bool("engine", "sync_swap_eyes", false);
-        g_config.engine_menu_state_probe = read_ini_bool("engine", "menu_state_probe", false);
+        g_config.engine_menu_state_probe = read_ini_bool("engine", "menu_state_probe", true);
         g_config.engine_animation_hmd_frustum = read_ini_bool(
             "engine", "animation_hmd_frustum", false);
         g_config.engine_animated_component_visible = read_ini_bool(
@@ -31414,16 +31415,24 @@ void __fastcall hook_engine_view_rebuild(float* view) {
                 world_marker_camera_view[4] +=
                     camera_hmd_roll * g_config.hmd_roll_scale;
             }
-            view[5] = game_pitch +
-                camera_hmd_pitch * g_config.hmd_pitch_scale;
-            view[6] += camera_hmd_yaw * g_config.hmd_yaw_scale;
-            view[4] += camera_hmd_roll * g_config.hmd_roll_scale;
-            applied_hmd_orientation = quaternion_from_hmd_euler(
-                camera_hmd_pitch * g_config.hmd_pitch_scale,
-                camera_hmd_yaw * g_config.hmd_yaw_scale,
-                camera_hmd_roll * g_config.hmd_roll_scale);
-            applied_hmd_position = {local_right, local_up, local_forward};
-            applied_hmd_pose_valid = true;
+            const bool is_in_menu = g_engine_menu_state.load(std::memory_order_relaxed) != 0;
+            if (is_in_menu) {
+                view[5] = original_pitch;
+                view[6] = original_yaw;
+                view[4] = original_roll;
+                applied_hmd_pose_valid = false;
+            } else {
+                view[5] = game_pitch +
+                    camera_hmd_pitch * g_config.hmd_pitch_scale;
+                view[6] += camera_hmd_yaw * g_config.hmd_yaw_scale;
+                view[4] += camera_hmd_roll * g_config.hmd_roll_scale;
+                applied_hmd_orientation = quaternion_from_hmd_euler(
+                    camera_hmd_pitch * g_config.hmd_pitch_scale,
+                    camera_hmd_yaw * g_config.hmd_yaw_scale,
+                    camera_hmd_roll * g_config.hmd_roll_scale);
+                applied_hmd_position = {local_right, local_up, local_forward};
+                applied_hmd_pose_valid = true;
+            }
         }
         if (g_config.engine_view_probe && present % 30 == 0) {
             log_line("HMD camera apply present=%llu pos=%.4f,%.4f,%.4f roll=%.4f->%.4f pitch=%.4f->%.4f yaw=%.4f->%.4f rotation=%.4f,%.4f,%.4f translation=%.4f,%.4f,%.4f fov=%.4f aspect=%.6f near=%.4f far=%.1f",
@@ -36946,7 +36955,7 @@ bool composite_mode3_hud_into_projection_image(
             exact_eye_views[eye].fov = submitted_views[eye].fov;
         }
     }
-    w3vr::openxr_eye_geometry::EyeGeometry hud_eye_geometry{};
+w3vr::openxr_eye_geometry::EyeGeometry hud_eye_geometry{};
     constexpr XrViewStateFlags kRequiredPoseFlags =
         XR_VIEW_STATE_ORIENTATION_VALID_BIT |
         XR_VIEW_STATE_POSITION_VALID_BIT;
@@ -36962,6 +36971,26 @@ bool composite_mode3_hud_into_projection_image(
         hud_eye_geometry.baseline_m >= 0.04f &&
         hud_eye_geometry.baseline_m <= 0.10f &&
         hud_eye_geometry.cant_degrees <= 45.0f;
+
+    // Desacoplar la orientación del HUD respecto al cabeceo/giro del visor usando la pose frontal calibrada (F9)
+    auto hud_plane_geometry = hud_eye_geometry;
+    XrQuaternionf center_orientation{};
+    bool center_valid{};
+    {
+        std::scoped_lock pose_lock{g_hmd_pose_snapshot_mutex};
+        center_valid = g_hmd_center_valid.load(std::memory_order_acquire);
+        if (center_valid) {
+            center_orientation = g_hmd_center_orientation;
+        }
+    }
+    if (center_valid) {
+        w3vr::openxr_eye_geometry::EyeGeometry fixed_geometry{};
+        if (w3vr::openxr_eye_geometry::with_hud_plane_orientation(
+                hud_eye_geometry, center_orientation, fixed_geometry)) {
+            hud_plane_geometry = fixed_geometry;
+        }
+    }
+
     for (uint32_t eye = 0; eye < 2 && headset_projection; ++eye) {
         const auto& image_rect = submitted_views[eye].subImage.imageRect;
         const int64_t image_right = static_cast<int64_t>(image_rect.offset.x) +
@@ -36976,7 +37005,7 @@ bool composite_mode3_hud_into_projection_image(
             image_bottom <= target_swapchain.height &&
             w3vr::openxr_eye_geometry::
                 build_cyclopean_hud_plane_clip_positions(
-                    hud_eye_geometry, eye, source_render_fov,
+                    hud_plane_geometry, eye, source_render_fov,
                     submitted_views[eye].fov, hud_size,
                     inverse_hud_distance, hud_clip_positions[eye]);
     }
@@ -43553,14 +43582,20 @@ void render_openxr_test_frame(
     projection_layer.viewCount = static_cast<uint32_t>(projection_views.size());
     projection_layer.views = projection_views.data();
 
-    XrCompositionLayerQuad menu_layer{XR_TYPE_COMPOSITION_LAYER_QUAD};
+XrCompositionLayerQuad menu_layer{XR_TYPE_COMPOSITION_LAYER_QUAD};
     menu_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
     menu_layer.subImage.swapchain = g_xr_eye_swapchains[0].handle;
     menu_layer.subImage.imageRect = menu_image_rect;
     menu_layer.subImage.imageArrayIndex = 0;
-    // [FIX:BUG-B] Menús siempre anclados en espacio LOCAL desde el arranque.
-    // Solo si el visor no reporta tracking válido todavía se usa VIEW como fallback temporal.
-    const int spatial_panel_kind = fullscreen_menu ? 1 : (cinema_panel ? 2 : 0);
+
+    // El frontend de inicio se mantiene en VIEW space suave a la altura de los ojos.
+    // En la partida, los menús y la pantalla de cine quedan anclados al mundo.
+    const bool startup_frontend_panel = fullscreen_menu &&
+        !g_engine_dual_render_active.load(std::memory_order_relaxed);
+    const int spatial_panel_kind = startup_frontend_panel
+        ? 0
+        : (fullscreen_menu ? 1
+        : (cinema_panel ? 2 : 0));
     static int anchored_panel_kind{};
     static bool anchored_panel_pose_valid{};
     static XrPosef anchored_panel_pose{};
@@ -43570,7 +43605,10 @@ void render_openxr_test_frame(
     const bool panel_tracking_pose_valid = views_valid &&
         (located_view_state_flags & required_panel_pose_flags) ==
             required_panel_pose_flags;
-    if (spatial_panel_kind == 0) {
+
+    // Si pulsamos F9 para recentrar, o si estamos en el menú de inicio, re-anclamos la altura
+    const bool recenter_requested = !g_hmd_center_valid.load(std::memory_order_relaxed);
+    if (spatial_panel_kind == 0 || recenter_requested) {
         anchored_panel_kind = 0;
         anchored_panel_pose_valid = false;
     } else if (panel_tracking_pose_valid &&
