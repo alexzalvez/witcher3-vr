@@ -26,7 +26,7 @@ using w3vr::CameraFollowPolicy;
 
 constexpr wchar_t kWindowClass[] = L"Witcher3VRLauncherWindow";
 constexpr int kClientWidth = 720;
-constexpr int kClientHeight = 1152;
+constexpr int kClientHeight = 890;
 constexpr DWORD kWindowStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU |
     WS_MINIMIZEBOX;
 
@@ -336,14 +336,20 @@ void UpdateResolutionControls() {
     const int selection = static_cast<int>(SendMessageW(
         Item(IdResolution), CB_GETCURSEL, 0, 0));
     EnableWindow(Item(IdResolution), !automatic);
-    EnableWindow(Item(IdWidth), !automatic && selection == 3);
-    EnableWindow(Item(IdHeight), !automatic && selection == 3);
+    EnableWindow(Item(IdWidth), !automatic && selection == 6);
+    EnableWindow(Item(IdHeight), !automatic && selection == 6);
 }
 
 void ApplyResolutionPreset(int selection) {
-    constexpr std::array<std::pair<int, int>, 3> presets{{
-        {2496, 2592}, {2688, 2784}, {3072, 3216}}};
-    if (selection >= 0 && selection < 3) {
+    constexpr std::array<std::pair<int, int>, 6> presets{{
+        {1440, 1536},  // Potato
+        {1728, 1824},  // Low
+        {2016, 2112},  // Medium
+        {2496, 2592},  // High
+        {2688, 2784},  // Ultra
+        {3072, 3216}   // Godlike
+    }};
+    if (selection >= 0 && selection < 6) {
         SetEditInteger(Item(IdWidth), presets[selection].first);
         SetEditInteger(Item(IdHeight), presets[selection].second);
     }
@@ -351,10 +357,13 @@ void ApplyResolutionPreset(int selection) {
 }
 
 int ResolutionPresetFor(int width, int height) {
-    if (width == 2496 && height == 2592) return 0;
-    if (width == 2688 && height == 2784) return 1;
-    if (width == 3072 && height == 3216) return 2;
-    return 3;
+    if (width == 1440 && height == 1536) return 0;
+    if (width == 1728 && height == 1824) return 1;
+    if (width == 2016 && height == 2112) return 2;
+    if (width == 2496 && height == 2592) return 3;
+    if (width == 2688 && height == 2784) return 4;
+    if (width == 3072 && height == 3216) return 5;
+    return 6; // Custom
 }
 
 bool ReadInteger(HWND edit, int& result) {
@@ -420,7 +429,7 @@ bool CaptureState(LauncherState& state, std::wstring& error) {
         Item(IdCinemaScale), TBM_GETPOS, 0, 0)) / 100.0f;
     state.cinema_aspect = static_cast<CinemaAspect>(std::clamp(
         static_cast<int>(SendMessageW(
-            Item(IdCinemaAspect), CB_GETCURSEL, 0, 0)), 0, 1));
+            Item(IdCinemaAspect), CB_GETCURSEL, 0, 0)), 0, 2));
     state.cinema_hud_scale = static_cast<float>(SendMessageW(
         Item(IdCinemaHudScale), TBM_GETPOS, 0, 0)) / 100.0f;
     state.cinema_hud_convergence_offset = static_cast<int>(SendMessageW(
@@ -841,7 +850,7 @@ void Save(bool launch) {
             L"Press Save or Save & Launch again to continue.";
         MessageBoxW(g_app.window, message.c_str(),
             L"DLSS resolution compatibility", MB_OK | MB_ICONINFORMATION);
-        SendMessageW(Item(IdResolution), CB_SETCURSEL, 3, 0);
+        SendMessageW(Item(IdResolution), CB_SETCURSEL, 6, 0);
         SetEditInteger(Item(IdWidth), *compatible_width);
         SetEditInteger(Item(IdHeight), state.height);
         EnableWindow(Item(IdWidth), TRUE);
@@ -876,7 +885,10 @@ void PopulateControls() {
     for (int i = 0; i < static_cast<int>(RenderMode::Count); ++i) ComboAdd(mode,
         w3vr::ModeDisplayName(static_cast<RenderMode>(i)));
 
-    HWND resolution = Item(IdResolution);
+HWND resolution = Item(IdResolution);
+    ComboAdd(resolution, L"Potato - 1440 x 1536");
+    ComboAdd(resolution, L"Low - 1728 x 1824");
+    ComboAdd(resolution, L"Medium - 2016 x 2112");
     ComboAdd(resolution, L"High - 2496 x 2592");
     ComboAdd(resolution, L"Ultra - 2688 x 2784");
     ComboAdd(resolution, L"Godlike - 3072 x 3216");
@@ -890,8 +902,9 @@ void PopulateControls() {
     ComboAdd(quality, L"Ultra Performance");
 
     HWND cinema_aspect = Item(IdCinemaAspect);
-    ComboAdd(cinema_aspect, L"5:4");
+    ComboAdd(cinema_aspect, L"16:9");
     ComboAdd(cinema_aspect, L"4:3");
+    ComboAdd(cinema_aspect, L"5:4");
 
     HWND snap_turn_degrees = Item(IdFirstPersonSnapTurnDegrees);
     ComboAdd(snap_turn_degrees, L"30 degrees");
@@ -989,7 +1002,6 @@ void CreateInterface(HWND window) {
     wcscpy_s(metrics.lfMessageFont.lfFaceName, L"Segoe UI");
     metrics.lfMessageFont.lfHeight = -15;
     g_app.font = CreateFontIndirectW(&metrics.lfMessageFont);
-
     g_app.tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
         WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -1001,196 +1013,163 @@ void CreateInterface(HWND window) {
     SendMessageW(g_app.tooltip, TTM_SETDELAYTIME, TTDT_AUTOPOP, 15000);
 
     AddTooltip(AddControl(L"BUTTON", L"Startup rendering", BS_GROUPBOX,
-        20, 18, 680, 142),
-        L"Select the stereo producer, headset render resolution, DLSS quality, and the safe Ray Tracing route used at game startup.");
+        20, 18, 680, 100),
+        L"Select the stereo producer, headset render resolution, and DLSS quality used at game startup.");
+
     AddTooltips(
-        L"AER + AFW uses PureDark AFW to generate the missing eye from alternating real eyes. It is the highest-performance route with minimal artifacts. Stereo renders both eyes and is steadier, but costs more GPU time.",
+        L"Stereo renders both eyes directly. Select Stereo - DLSS for best stability and image clarity.",
         {AddLabel(L"Render mode", 38, 40, 150, 22),
          AddCombo(190, 36, 260, IdMode)});
+
     AddTooltips(
-        L"Select DLAA or the DLSS quality/performance preset. This control is available only for DLSS render modes.",
+        L"Select DLAA or the DLSS quality/performance preset.",
         {AddLabel(L"DLSS preset", 470, 40, 100, 22),
          AddCombo(565, 36, 125, IdDlssQuality)});
+
     AddTooltips(
-        L"AUTO queries the active OpenXR runtime immediately before saving or launching and applies its exact recommended per-eye resolution. Disable AUTO to use the Quest 3 presets or a custom resolution.",
-        {AddLabel(L"Resolution", 38, 80, 150, 22),
-         AddCombo(190, 76, 190, IdResolution),
+        L"AUTO queries the active OpenXR runtime. Disable AUTO to use the scalable presets or a custom resolution.",
+        {AddLabel(L"Resolution", 38, 76, 150, 22),
+         AddCombo(190, 72, 190, IdResolution),
          AddControl(L"BUTTON", L"AUTO", BS_AUTOCHECKBOX | WS_TABSTOP,
-             392, 76, 76, 25, IdResolutionAuto),
+             392, 72, 76, 25, IdResolutionAuto),
          AddControl(L"EDIT", L"", WS_BORDER | ES_NUMBER | ES_CENTER |
-             WS_TABSTOP, 485, 76, 82, 25, IdWidth, WS_EX_CLIENTEDGE),
-         AddLabel(L"x", 571, 80, 15, 22, 0, SS_CENTER),
+             WS_TABSTOP, 485, 72, 82, 25, IdWidth, WS_EX_CLIENTEDGE),
+         AddLabel(L"x", 571, 76, 15, 22, 0, SS_CENTER),
          AddControl(L"EDIT", L"", WS_BORDER | ES_NUMBER | ES_CENTER |
-             WS_TABSTOP, 589, 76, 82, 25, IdHeight, WS_EX_CLIENTEDGE)});
-    AddTooltip(AddControl(L"BUTTON",
-        L"Ray Tracing (AER + AFW)",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 112, 620, 28, IdRayTracing),
-        L"The launcher controls both the game's Ray Tracing master switch and Witcher 3 VR's RT flag. Ray Tracing can be enabled with AER + AFW using either TAAU or DLSS, and is forced off for every other render mode.");
+             WS_TABSTOP, 589, 72, 82, 25, IdHeight, WS_EX_CLIENTEDGE)});
 
     AddTooltip(AddControl(L"BUTTON", L"Comfort and interface", BS_GROUPBOX,
-        20, 174, 680, 494),
-        L"Tune the headset presentation, HUD, cinema framing, and experimental renderer options. Hover any setting name or control for details.");
+        20, 128, 680, 310),
+        L"Tune presentation size, HUD convergence, and Cinema3D panel settings.");
+
     AddTooltips(
-        L"Lower values concentrate the same render resolution into a smaller angular area, increasing effective pixel density and supersampling. Black bands gradually appear, so find the lowest value that remains comfortable for your headset and fit.",
-        {AddLabel(L"Presentation size", 38, 200, 170, 22),
-         AddTrack(205, 194, 405, IdPresentationScale, 50, 100),
-         AddLabel(L"1.00", 625, 200, 54, 22,
+        L"Presentation size scaling.",
+        {AddLabel(L"Presentation size", 38, 152, 170, 22),
+         AddTrack(205, 146, 405, IdPresentationScale, 50, 100),
+         AddLabel(L"1.00", 625, 152, 54, 22,
              IdPresentationScaleValue, SS_RIGHT)});
 
     AddTooltips(
-        L"Adjust the stereo depth of gameplay HUD elements. Move it only enough to make the interface comfortable to focus on.",
-        {AddLabel(L"HUD convergence", 38, 244, 170, 22),
-         AddTrack(205, 238, 405, IdConvergence, -64, 64),
-         AddLabel(L"0", 625, 244, 54, 22,
+        L"Adjust the stereo depth of gameplay HUD elements.",
+        {AddLabel(L"HUD convergence", 38, 190, 170, 22),
+         AddTrack(205, 184, 405, IdConvergence, -64, 64),
+         AddLabel(L"0", 625, 190, 54, 22,
              IdConvergenceValue, SS_RIGHT)});
 
     AddTooltips(
-        L"Changes the size of the floating menu window without changing its distance.",
-        {AddLabel(L"Menu window size", 38, 288, 170, 22),
-         AddTrack(205, 282, 405, IdMenuScale, 30, 150),
-         AddLabel(L"0.85", 625, 288, 54, 22,
+        L"Changes the size of the floating menu window.",
+        {AddLabel(L"Menu window size", 38, 228, 170, 22),
+         AddTrack(205, 222, 405, IdMenuScale, 30, 150),
+         AddLabel(L"1.00", 625, 228, 54, 22,
              IdMenuScaleValue, SS_RIGHT)});
 
     AddTooltips(
-        L"Changes the size of the anchored Cinema3D screen used by menus, videos, and non-Full-VR scenes.",
-        {AddLabel(L"Cinema screen size", 38, 332, 170, 22),
-         AddTrack(205, 326, 235, IdCinemaScale, 30, 150),
-         AddLabel(L"0.90", 445, 332, 50, 22,
-             IdCinemaScaleValue, SS_RIGHT)});
-    AddTooltips(
-        L"Select the Cinema3D screen aspect ratio. 5:4 is the recommended default; 4:3 is available for personal preference.",
-        {AddLabel(L"Aspect", 510, 332, 58, 22),
-         AddCombo(575, 324, 104, IdCinemaAspect)});
+        L"Changes the size and aspect ratio of the Cinema3D screen.",
+        {AddLabel(L"Cinema screen size", 38, 266, 170, 22),
+         AddTrack(205, 260, 235, IdCinemaScale, 30, 150),
+         AddLabel(L"1.00", 445, 266, 50, 22,
+             IdCinemaScaleValue, SS_RIGHT),
+         AddLabel(L"Aspect", 510, 266, 58, 22),
+         AddCombo(575, 258, 104, IdCinemaAspect)});
 
     AddTooltips(
-        L"Adjusts the close third-person camera preset selected with F8. Higher values move the camera farther from Geralt.",
-        {AddLabel(L"Near View", 38, 376, 170, 22),
-         AddTrack(205, 370, 405, IdNearView, -200, 300),
-         AddLabel(L"0.75", 625, 376, 54, 22,
+        L"Adjusts the close third-person camera preset selected with F8.",
+        {AddLabel(L"Near View", 38, 304, 170, 22),
+         AddTrack(205, 298, 405, IdNearView, -200, 300),
+         AddLabel(L"0.75", 625, 304, 54, 22,
              IdNearViewValue, SS_RIGHT)});
 
     AddTooltips(
-        L"Changes HUD and subtitle size on the Cinema3D screen.",
-        {AddLabel(L"Cinema3D HUD/text size", 38, 420, 150, 22),
-         AddTrack(188, 414, 112, IdCinemaHudScale, 50, 150),
-         AddLabel(L"1.30", 302, 420, 46, 22,
-             IdCinemaHudScaleValue, SS_RIGHT)});
-    AddTooltips(
-        L"Changes HUD and subtitle size when the scene is rendered in Full VR.",
-        {AddLabel(L"Full VR HUD/text size", 365, 420, 145, 22),
-         AddTrack(510, 414, 112, IdFullVrHudScale, 50, 150),
-         AddLabel(L"1.00", 624, 420, 55, 22,
-             IdFullVrHudScaleValue, SS_RIGHT)});
-
-    AddTooltips(
-        L"Fine-tunes Cinema3D HUD depth around the automatic convergence calculated from HUD size.",
-        {AddLabel(L"Cinema3D conv. offset", 38, 462, 150, 22),
-         AddTrack(188, 456, 100, IdCinemaHudConvergenceOffset, -64, 64),
-         AddLabel(L"+0 / -72", 292, 462, 62, 22,
+        L"Cinema3D HUD size and convergence offset.",
+        {AddLabel(L"Cinema3D HUD size", 38, 342, 145, 22),
+         AddTrack(188, 336, 112, IdCinemaHudScale, 50, 150),
+         AddLabel(L"1.30", 302, 342, 46, 22,
+             IdCinemaHudScaleValue, SS_RIGHT),
+         AddLabel(L"Cinema3D conv. offset", 365, 342, 145, 22),
+         AddTrack(510, 336, 100, IdCinemaHudConvergenceOffset, -64, 64),
+         AddLabel(L"-36", 612, 342, 67, 22,
              IdCinemaHudConvergenceOffsetValue, SS_RIGHT)});
-    AddTooltips(
-        L"Fine-tunes Full VR HUD depth without changing the physical depth maintained when HUD size changes.",
-        {AddLabel(L"Full VR conv. offset", 365, 462, 145, 22),
-         AddTrack(510, 456, 100, IdFullVrHudConvergenceOffset, -64, 64),
-         AddLabel(L"+0 / -36", 612, 462, 67, 22,
-             IdFullVrHudConvergenceOffsetValue, SS_RIGHT)});
 
-    AddTooltip(AddControl(L"BUTTON", L"Show Automatic Cutscenes in Full VR",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 498, 320, 26, IdCinemaFullVr),
-        L"Keeps supported automatic cutscenes in geometry stereo Full VR instead of placing them on the Cinema3D screen.");
-    AddTooltip(AddControl(L"BUTTON", L"Steady Icons",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 365, 498, 285, 26, IdSteadyIcons),
-        L"Stabilizes world-space icons. It adds one frame only in Stereo; under AER + AFW it may not remain as stable as it does in Stereo.");
-
-    AddTooltip(AddControl(L"BUTTON",
-        L"Enable vertical mouse/pad pitch (Experimental)",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 530, 335, 28, IdVerticalPitch),
-        L"Allows mouse or gamepad pitch to tilt the camera vertically. The headset currently moves incorrectly when the view is not level with the horizon; this issue is not fixed yet.");
     AddTooltip(AddControl(L"BUTTON", L"Faster Movement Transitions",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 380, 530, 285, 26,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 380, 285, 26,
         IdFastMovementTransitions),
-        L"Enables the bundled movement-input fix DLC for faster transitions between movement states.");
+        L"Enables faster transitions between movement states.");
 
-    AddTooltip(AddControl(L"BUTTON",
-        L"Alternate Presentation Resize (Experimental; VD foveated rendering)",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 562, 640, 26,
-        IdAlternatePresentationResize),
-        L"Available when Presentation Size is below 1.00 and Asymmetric Projection is off. It keeps the runtime FOV unchanged and letterboxes the reduced image, enabling Virtual Desktop foveated-rendering experiments.");
-    AddTooltip(AddControl(L"BUTTON", L"Asymmetric Projection (Experimental)",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 594, 610, 26,
-        IdNativeStereo),
-        L"Improves image quality at zero performance cost by matching the projection to your headset. The improvement depends on the headset and may be minimal or negligible on some models. Because it is experimental, it may cause visual artifacts or duplicated shader effects. It works with both AER + AFW and Stereo.");
-    AddTooltip(AddControl(L"BUTTON", L"Diagnostic Logging",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 626, 300, 26,
-        IdDiagnosticLogging),
-        L"Writes witcher3vr.log and enables bounded runtime diagnostics. Use it for troubleshooting because it may affect performance.");
     AddTooltip(AddControl(L"BUTTON", L"Hide Static HUD Outside Combat",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 365, 626, 315, 26,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 365, 380, 315, 26,
         IdHideStaticHudOutsideCombat),
-        L"Hides the minimap, tracked objectives, vitality, buffs, equipped items, damaged-item status, companion panel, and control hints outside combat. Witcher Sense reveals them; combat and horse races preserve navigation information.");
+        L"Hides static HUD elements outside combat.");
+
+    AddTooltip(AddControl(L"BUTTON", L"Diagnostic Logging",
+        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 410, 300, 26,
+        IdDiagnosticLogging),
+        L"Writes witcher3vr.log for troubleshooting.");
 
     AddTooltip(AddControl(L"BUTTON", L"First Person and camera", BS_GROUPBOX,
-        20, 682, 680, 178),
+        20, 450, 680, 178),
         L"First Person comfort controls and the dynamic REDengine camera-follow policy.");
+
     AddTooltip(AddControl(L"BUTTON", L"Gamepad Snap Turn + Head Follow",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 708, 420, 28,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 476, 420, 28,
         IdFirstPersonGamepadHeadFollow),
-        L"Turns the body in fixed gamepad steps and makes movement follow the headset direction while First Person is active.");
+        L"Turns the body in fixed gamepad steps and makes movement follow the headset direction.");
+
     AddTooltips(
         L"Select the number of degrees applied by each First Person gamepad snap turn.",
-        {AddLabel(L"Angle", 475, 712, 60, 22),
-         AddCombo(540, 704, 135, IdFirstPersonSnapTurnDegrees)});
+        {AddLabel(L"Angle", 475, 480, 60, 22),
+         AddCombo(540, 472, 135, IdFirstPersonSnapTurnDegrees)});
+
     AddTooltip(AddControl(L"BUTTON", L"Auto switch to third person during combats",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 740, 630, 28,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 508, 630, 28,
         IdFirstPersonCombatExit),
-        L"Leaves First Person when combat begins and returns after combat has safely ended. Manual view changes cancel the pending automatic return.");
+        L"Leaves First Person when combat begins and returns after combat ends.");
+
     AddTooltip(AddControl(L"BUTTON", L"Strafe Movement",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 772, 310, 26,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 540, 310, 26,
         IdFirstPersonStrafe),
-        L"Keeps lateral input as strafing instead of turning Geralt while First Person is active.");
+        L"Keeps lateral input as strafing while First Person is active.");
+
     AddTooltip(AddControl(L"BUTTON", L"Reduce Head Bobbing",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 365, 772, 310, 26,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 365, 540, 310, 26,
         IdFirstPersonAnchorSmoothing),
-        L"Smooths lateral and vertical First Person camera-anchor motion while preserving deliberate view rotation.");
+        L"Smooths First Person camera motion.");
 
     AddTooltips(
-        L"Controls REDengine camera follow dynamically. Always On is disabled while on foot in First Person, but remains enabled on a horse or boat. Only Horse/Boat disables it everywhere else. Always Off never enables it.",
-        {AddLabel(L"Camera Follow", 38, 808, 170, 22),
-         AddCombo(205, 800, 260, IdCameraFollow)});
+        L"Controls REDengine camera follow dynamically.",
+        {AddLabel(L"Camera Follow", 38, 576, 170, 22),
+         AddCombo(205, 568, 260, IdCameraFollow)});
 
     AddTooltip(AddControl(L"BUTTON", L"Bindings", BS_GROUPBOX,
-        20, 874, 680, 112),
+        20, 640, 680, 72),
         L"Keyboard shortcuts available while Witcher 3 VR is running.");
-    AddTooltip(AddLabel(
-        L"F8  Standard / Near    F9  Recenter    F10  Cinema    F11  First Person (Experimental)",
-        38, 900, 650, 24),
-        L"Runtime view shortcuts: cycle the standard/near camera, recenter the headset, toggle Cinema3D, or toggle First Person.");
-    AddTooltip(AddLabel(
-        L"HUD editor: INS open / save and close    Q/E select panel    Arrow keys move    Wheel scales",
-        38, 924, 650, 24),
-        L"HUD editor controls: open or save with Insert, select a panel with Q/E, move it with the arrow keys, and resize it with the mouse wheel.");
-    AddTooltip(AddLabel(
-        L"R reset panel    X reset profile    F7 switch VR / Cinema3D (editor open or closed)",
-        38, 948, 650, 24),
-        L"HUD editor reset and preview controls: reset the current panel, reset the profile, or switch between Full VR and Cinema3D.");
 
-    AddTooltip(AddLabel(L"", 20, 994, 680, 26, IdStatus, SS_LEFT),
-        L"Shows validation results, saved changes, and launch status.");
+    AddTooltip(AddLabel(
+        L"F8  Standard / Near View     F9  Recenter HMD & HUD     F10  Cinema Mode     F11  First Person",
+        38, 668, 650, 28),
+        L"Runtime view shortcuts.");
+
+    AddTooltip(AddLabel(L"", 20, 726, 680, 26, IdStatus, SS_LEFT),
+        L"Shows validation results and launch status.");
+
     AddTooltip(AddControl(L"BUTTON", L"Configure Settings for VR",
-        BS_PUSHBUTTON | WS_TABSTOP, 20, 1024, 220, 34, IdConfigureVr),
-        L"Installs the complete recommended VR graphics baseline, then reapplies the selected render mode and resolution.");
+        BS_PUSHBUTTON | WS_TABSTOP, 20, 756, 220, 34, IdConfigureVr),
+        L"Applies recommended VR baseline settings.");
+
     AddTooltip(AddControl(L"BUTTON", L"Restore Original Settings",
-        BS_PUSHBUTTON | WS_TABSTOP, 252, 1024, 220, 34, IdRestoreOriginal),
-        L"Restores the original dx12user.settings backup created by Configure Settings for VR.");
+        BS_PUSHBUTTON | WS_TABSTOP, 252, 756, 220, 34, IdRestoreOriginal),
+        L"Restores original game settings backup.");
+
     AddTooltip(AddControl(L"BUTTON", L"Restore Defaults",
-        BS_PUSHBUTTON | WS_TABSTOP, 484, 1024, 216, 34, IdRestoreDefaults),
-        L"Loads Witcher 3 VR launcher defaults into the controls. Press Save to apply them.");
+        BS_PUSHBUTTON | WS_TABSTOP, 484, 756, 216, 34, IdRestoreDefaults),
+        L"Loads Witcher 3 VR launcher defaults.");
+
     AddTooltip(AddControl(L"BUTTON", L"Save Only",
-        BS_PUSHBUTTON | WS_TABSTOP, 406, 1070, 130, 36, IdSave),
-        L"Writes the selected launcher, renderer, and game settings without starting the game.");
+        BS_PUSHBUTTON | WS_TABSTOP, 406, 802, 130, 36, IdSave),
+        L"Writes settings to witcher3vr.ini.");
+
     AddTooltip(AddControl(L"BUTTON", L"Save && Launch",
-        BS_DEFPUSHBUTTON | WS_TABSTOP, 550, 1070, 150, 36, IdSaveLaunch),
-        L"Writes all settings, enforces render-mode compatibility, and starts The Witcher 3.");
+        BS_DEFPUSHBUTTON | WS_TABSTOP, 550, 802, 150, 36, IdSaveLaunch),
+        L"Writes settings and starts The Witcher 3.");
 
     PopulateControls();
     LayoutInterface();
