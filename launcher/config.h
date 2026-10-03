@@ -62,7 +62,7 @@ struct LauncherState {
     float presentation_scale{1.0f};
     float menu_scale{1.0f};
     float cinema_scale{1.0f};
-    CinemaAspect cinema_aspect{CinemaAspect::SixteenNine};
+    CinemaAspect cinema_aspect{CinemaAspect::FourThree};
     float cinema_hud_scale{1.30f};
     int cinema_hud_convergence_offset{-36};
     float full_vr_hud_scale{1.00f};
@@ -79,7 +79,7 @@ struct LauncherState {
     CameraFollowPolicy camera_follow_policy{CameraFollowPolicy::HorseBoatOnly};
     bool hide_static_hud_outside_combat{false};
     bool fast_movement_transitions{true};
-    bool native_stereo{true};
+    bool native_stereo{false};
     bool fullscreen_projection{false};
     bool alternate_presentation_resize{false};
     bool diagnostic_logging{false};
