@@ -37009,17 +37009,7 @@ w3vr::openxr_eye_geometry::EyeGeometry hud_eye_geometry{};
                     submitted_views[eye].fov, hud_size,
                     inverse_hud_distance, hud_clip_positions[eye]);
     }
-    // [FEATURE:WORLD-LOCKED-GAMEPLAY-HUD]
-    // Anclaje persistente del HUD en el espacio LOCAL (desacoplado del giro de la cabeza)
-    static XrPosef s_gameplay_hud_anchor{};
-    static bool s_gameplay_hud_anchor_valid{};
-    
-    // Si se pulsa F9 para recentrar, re-anclamos el HUD frente a la nueva orientación
-    if (!g_hmd_center_valid.load(std::memory_order_relaxed)) {
-        s_gameplay_hud_anchor_valid = false;
-    }
-
-    if (cinema_projection) {
+if (cinema_projection) {
         bool panel_geometry_valid = true;
         for (uint32_t eye = 0; eye < 2; ++eye) {
             panel_geometry_valid = panel_geometry_valid &&
@@ -37033,47 +37023,8 @@ w3vr::openxr_eye_geometry::EyeGeometry hud_eye_geometry{};
         if (!panel_geometry_valid) {
             return false;
         }
-    } else if (headset_projection && !automatic_full_vr_cutscene) {
-        // En juego normal: anclamos el HUD general como un panel frontal en espacio LOCAL
-        if (!s_gameplay_hud_anchor_valid && submitted_views != nullptr) {
-            const auto& tracked_orientation = exact_eye_views[0].pose.orientation;
-            const float yaw_twist_length = sqrtf(
-                tracked_orientation.y * tracked_orientation.y +
-                tracked_orientation.w * tracked_orientation.w);
-            
-            // Nivelamos pitch y roll a 0 para que la pantalla quede siempre vertical
-            s_gameplay_hud_anchor.orientation = yaw_twist_length > 0.000001f
-                ? XrQuaternionf{0.0f, tracked_orientation.y / yaw_twist_length, 0.0f, tracked_orientation.w / yaw_twist_length}
-                : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
-
-            const XrVector3f head_pos{
-                (exact_eye_views[0].pose.position.x + exact_eye_views[1].pose.position.x) * 0.5f,
-                (exact_eye_views[0].pose.position.y + exact_eye_views[1].pose.position.y) * 0.5f,
-                (exact_eye_views[0].pose.position.z + exact_eye_views[1].pose.position.z) * 0.5f};
-
-            // Distancia del panel HUD: ~1.8 metros al frente
-            const float hud_distance_m = g_config.menu_distance > 0.1f ? g_config.menu_distance : 1.8f;
-            const auto hud_offset = rotate_vector(
-                s_gameplay_hud_anchor.orientation,
-                XrVector3f{0.0f, 0.0f, -hud_distance_m});
-
-            s_gameplay_hud_anchor.position = {
-                head_pos.x + hud_offset.x,
-                head_pos.y + hud_offset.y,
-                head_pos.z + hud_offset.z};
-            s_gameplay_hud_anchor_valid = true;
-        }
-
-        // Proyectamos el HUD general sobre el panel espacial desacoplado
-        const float panel_w = 2.4f * hud_size;
-        const float panel_h = 1.35f * hud_size;
-        for (uint32_t eye = 0; eye < 2; ++eye) {
-            build_anchored_panel_clip_positions(
-                exact_eye_views[eye],
-                s_gameplay_hud_anchor_valid ? s_gameplay_hud_anchor : exact_eye_views[eye].pose,
-                panel_w, panel_h,
-                hud_clip_positions[eye]);
-        }
+    } else if (headset_projection) {
+        // HUD proyectado con la geometría ciclópea nativa y orientación desacoplada (F9)
     } else {
         constexpr std::array<float, 16> kLegacyFullscreenClip{{
             -1.0f, 1.0f, 0.5f, 1.0f, 
