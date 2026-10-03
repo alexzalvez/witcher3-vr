@@ -43539,14 +43539,8 @@ XrCompositionLayerQuad menu_layer{XR_TYPE_COMPOSITION_LAYER_QUAD};
     menu_layer.subImage.imageRect = menu_image_rect;
     menu_layer.subImage.imageArrayIndex = 0;
 
-    // El frontend de inicio se mantiene en VIEW space suave a la altura de los ojos.
-    // En la partida, los menús y la pantalla de cine quedan anclados al mundo.
-    const bool startup_frontend_panel = fullscreen_menu &&
-        !g_engine_dual_render_active.load(std::memory_order_relaxed);
-    const int spatial_panel_kind = startup_frontend_panel
-        ? 0
-        : (fullscreen_menu ? 1
-        : (cinema_panel ? 2 : 0));
+// Smart Cinema Anchor: la pantalla de inicio y menús flotan en el mundo real (g_xr_space)
+    const int spatial_panel_kind = fullscreen_menu ? 1 : (cinema_panel ? 2 : 0);
     static int anchored_panel_kind{};
     static bool anchored_panel_pose_valid{};
     static XrPosef anchored_panel_pose{};
@@ -43557,65 +43551,60 @@ XrCompositionLayerQuad menu_layer{XR_TYPE_COMPOSITION_LAYER_QUAD};
         (located_view_state_flags & required_panel_pose_flags) ==
             required_panel_pose_flags;
 
-    // Si pulsamos F9 para recentrar, o si estamos en el menú de inicio, re-anclamos la altura
+    // Si se solicita recentrado con F9, liberamos el anclaje para re-centrar al frente
     const bool recenter_requested = !g_hmd_center_valid.load(std::memory_order_relaxed);
     if (spatial_panel_kind == 0 || recenter_requested) {
         anchored_panel_kind = 0;
         anchored_panel_pose_valid = false;
-    } else if (panel_tracking_pose_valid &&
-        (!anchored_panel_pose_valid ||
-            anchored_panel_kind != spatial_panel_kind)) {
+    }
+
+    if (spatial_panel_kind != 0 && panel_tracking_pose_valid) {
         const XrView* anchor_views =
             isolate_publication_pose && !frame_was_prepared
             ? publication_views.data()
             : g_xr_views.data();
-        const auto& tracked_orientation =
-            anchor_views[0].pose.orientation;
-        // [FIX:LEVEL-SPATIAL-PANEL 1/1] Keep panels upright in the LOCAL
-        // gravity frame. Startup often catches the headset while it is being
-        // put on; preserving that transient pitch anchored the first menu far
-        // below eye level for the rest of the frontend session.
-        const float yaw_twist_length = sqrtf(
-            tracked_orientation.y * tracked_orientation.y +
-            tracked_orientation.w * tracked_orientation.w);
-        anchored_panel_pose.orientation = yaw_twist_length > 0.000001f
-            ? XrQuaternionf{0.0f,
-                  tracked_orientation.y / yaw_twist_length,
-                  0.0f,
-                  tracked_orientation.w / yaw_twist_length}
-            : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+
         const XrVector3f head_position{
-            (anchor_views[0].pose.position.x +
-                anchor_views[1].pose.position.x) * 0.5f,
-            (anchor_views[0].pose.position.y +
-                anchor_views[1].pose.position.y) * 0.5f,
-            (anchor_views[0].pose.position.z +
-                anchor_views[1].pose.position.z) * 0.5f};
-        const auto panel_offset = rotate_vector(
-            anchored_panel_pose.orientation,
-            XrVector3f{0.0f, 0.0f, -g_config.menu_distance});
-        anchored_panel_pose.position = {
-            head_position.x + panel_offset.x,
-            head_position.y + panel_offset.y,
-            head_position.z + panel_offset.z};
-        anchored_panel_kind = spatial_panel_kind;
-        anchored_panel_pose_valid = true;
-        log_taau_trace_line(
-            "OpenXR spatial panel anchored kind=%s present=%llu "
-            "position=%.4f,%.4f,%.4f orientation=%.5f,%.5f,%.5f,%.5f",
-            fullscreen_menu ? "menu" : "cinema",
-            static_cast<unsigned long long>(current_present),
-            anchored_panel_pose.position.x,
-            anchored_panel_pose.position.y,
-            anchored_panel_pose.position.z,
-            anchored_panel_pose.orientation.x,
-            anchored_panel_pose.orientation.y,
-            anchored_panel_pose.orientation.z,
-            anchored_panel_pose.orientation.w);
+            (anchor_views[0].pose.position.x + anchor_views[1].pose.position.x) * 0.5f,
+            (anchor_views[0].pose.position.y + anchor_views[1].pose.position.y) * 0.5f,
+            (anchor_views[0].pose.position.z + anchor_views[1].pose.position.z) * 0.5f};
+
+        // Filtro de altura: sólo anclamos cuando el visor está colocado en la cabeza (Y >= 0.60m)
+        // para evitar anclarlo en el suelo si el juego arranca con el visor sobre la mesa.
+        const bool headset_on_head = head_position.y >= 0.60f;
+
+        if (!anchored_panel_pose_valid && headset_on_head) {
+            const auto& tracked_orientation = anchor_views[0].pose.orientation;
+            const float yaw_twist_length = sqrtf(
+                tracked_orientation.y * tracked_orientation.y +
+                tracked_orientation.w * tracked_orientation.w);
+
+            // Nivelamos la pantalla con el horizonte (cero cabeceo vertical)
+            anchored_panel_pose.orientation = yaw_twist_length > 0.000001f
+                ? XrQuaternionf{0.0f,
+                      tracked_orientation.y / yaw_twist_length,
+                      0.0f,
+                      tracked_orientation.w / yaw_twist_length}
+                : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+
+            // Colocamos la pantalla flotando a 1.5 metros al frente a la altura exacta de tus ojos
+            const float panel_dist = g_config.menu_distance > 0.5f ? g_config.menu_distance : 1.50f;
+            const auto panel_offset = rotate_vector(
+                anchored_panel_pose.orientation,
+                XrVector3f{0.0f, 0.0f, -panel_dist});
+
+            anchored_panel_pose.position = {
+                head_position.x + panel_offset.x,
+                head_position.y + panel_offset.y,
+                head_position.z + panel_offset.z};
+
+            anchored_panel_kind = spatial_panel_kind;
+            anchored_panel_pose_valid = true;
+        }
     }
-    // Before OpenXR reports a valid tracked pose, keep the startup panel in
-    // VIEW space instead of placing it at LOCAL origin (which can be floor
-    // height). It becomes world-locked as soon as the first valid pose arrives.
+
+    // Mientras el visor esté sobre la mesa antes de ponértelo, queda en espera suave.
+    // En el momento en que te lo pones en la cabeza, queda fijado en tu habitación (g_xr_space).
     menu_layer.space = anchored_panel_pose_valid
         ? g_xr_space
         : g_xr_view_space;
