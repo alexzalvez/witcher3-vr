@@ -54,8 +54,9 @@ if (-not (Test-Path -LiteralPath (Join-Path $openXrLoaderSource 'CMakeLists.txt'
     throw 'Missing OpenXR loader source. Run scripts/setup-dependencies.ps1 first.'
 }
 if (-not (Test-Path -LiteralPath $openXrLoader -PathType Leaf)) {
-    & cmake -S $openXrLoaderSource -B $openXrLoaderBuild -A x64 `
-        -DDYNAMIC_LOADER=ON
+    & cmake -S $openXrLoaderSource -B$openXrLoaderBuild -A x64 `
+        -DDYNAMIC_LOADER=ON `
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
     if ($LASTEXITCODE -ne 0) {
         throw 'Failed to configure the pinned OpenXR loader.'
     }
