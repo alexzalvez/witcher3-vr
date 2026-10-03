@@ -1,0 +1,42 @@
+name: Build Witcher 3 VR (Clean v0.9.5)
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download SDKs & Dependencies
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/setup-dependencies.ps1
+
+      - name: Configure CMake
+        run: |
+          cmake -B build/release -S . -DCMAKE_BUILD_TYPE=Release -DW3VR_BUILD_LAUNCHER=ON
+
+      - name: Build Witcher 3 VR
+        run: |
+          cmake --build build/release --config Release --parallel
+
+      - name: Package Release ZIP
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version V1267
+
+      - name: Upload Mod Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Witcher3VR-v0.9.5-CleanHUD
+          path: dist/*.zip
+          if-no-files-found: error
