@@ -37569,7 +37569,8 @@ bool render_anchored_cinema_projection(
         source_to_shader[eye].Transition.Subresource =
             D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     }
-    g_xr_command_list->ResourceBarrier(2, source_to_shader);
+const uint32_t barrier_count = (sources[0] == sources[1]) ? 1 : 2;
+    g_xr_command_list->ResourceBarrier(barrier_count, source_to_shader);
 
     ID3D12DescriptorHeap* heaps[] = {
         g_xr_cinema_projection_srv_heap};
@@ -37629,12 +37630,12 @@ bool render_anchored_cinema_projection(
         g_draw_instanced(g_xr_command_list, 6, 1, 0, 0);
     }
 
-    for (auto& barrier : source_to_shader) {
+for (auto& barrier : source_to_shader) {
         std::swap(
             barrier.Transition.StateBefore,
             barrier.Transition.StateAfter);
     }
-    g_xr_command_list->ResourceBarrier(2, source_to_shader);
+    g_xr_command_list->ResourceBarrier(barrier_count, source_to_shader);
     return true;
 }
 
@@ -40821,9 +40822,14 @@ void render_openxr_test_frame(
         isolate_publication_pose && !frame_was_prepared
         ? publication_views.data()
         : g_xr_views.data();
-    static bool cinema_projection_anchor_valid{};
+static bool cinema_projection_anchor_valid{};
     static XrPosef cinema_projection_anchor{};
-    if (!cinema_panel) {
+    const bool spatial_cinema_active = cinema_panel || fullscreen_menu;
+    static bool s_prev_menu_state_anchor = false;
+    const bool menu_opened_anchor = fullscreen_menu && !s_prev_menu_state_anchor;
+    s_prev_menu_state_anchor = fullscreen_menu;
+
+    if (!spatial_cinema_active || menu_opened_anchor || (GetAsyncKeyState(VK_F9) & 1) != 0) {
         cinema_projection_anchor_valid = false;
     } else if (!cinema_projection_anchor_valid && views_valid) {
         const auto& tracked_orientation =
@@ -42985,6 +42991,20 @@ void render_openxr_test_frame(
                             cinema_projection_anchor,
                             cinema_projection_panel_width,
                             cinema_projection_panel_height);
+                } else if (fullscreen_menu && primary_source != nullptr && cinema_projection_anchor_valid) {
+                    ID3D12Resource* menu_sources[2]{primary_source, primary_source};
+                    const float panel_width = 1.6f * g_config.menu_scale;
+                    const float source_height_over_width = copy_width > 0
+                        ? static_cast<float>(copy_height) / static_cast<float>(copy_width)
+                        : 1.0f;
+                    const float panel_height = panel_width * source_height_over_width;
+                    cinema_projection_panel_ready =
+                        render_anchored_cinema_projection(
+                            swapchain, image_index,
+                            menu_sources, current_panel_views,
+                            cinema_projection_anchor,
+                            panel_width,
+                            panel_height);
                 }
 
                 copied_game = fit_projection_ready;
@@ -43718,22 +43738,17 @@ void render_openxr_test_frame(
     XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
     end_info.displayTime = frame_state.predictedDisplayTime;
     end_info.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    if (!submitted) {
+if (!submitted) {
         end_info.layerCount = 0;
         end_info.layers = nullptr;
+    } else if ((fullscreen_menu || cinema_panel) && cinema_projection_panel_ready) {
+        // Pantalla de cine 3D fija con proyeccion estereo nativa para cinematograficas y menus
+        end_info.layerCount = 1;
+        end_info.layers = projection_layers;
     } else if (fullscreen_menu) {
         end_info.layerCount = 1;
         end_info.layers = menu_layers;
-    } else if (cinema_panel && cinema_projection_panel_ready) {
-        // [FIX:CINEMA-ANCHORED-STEREO-PROJECTION 4/5] Use one native stereo
-        // projection layer. The runtime must select its matching array slice
-        // for each eye, unlike eye-selective quad layers which this runtime
-        // presents to both eyes.
-        end_info.layerCount = 1;
-        end_info.layers = projection_layers;
     } else if (cinema_panel) {
-        // Loading and the first cinema frame may precede a complete packed
-        // geometry pair. Keep the prior mono panel until stereo is ready.
         end_info.layerCount = 1;
         end_info.layers = menu_layers;
     } else {
