@@ -36893,7 +36893,7 @@ bool composite_mode3_hud_into_projection_image(
             !std::isfinite(cinema_parameters->aspect_ratio) ||
             cinema_parameters->panel_width <= 0.01f ||
             cinema_parameters->panel_height <= 0.01f ||
-            cinema_parameters->aspect_ratio <= 1.0f)) {
+            cinema_parameters->aspect_ratio <= 0.01f)) {
         return false;
     }
     const int reference_left_eye_shift = cinema_projection
