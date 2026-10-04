@@ -36881,8 +36881,7 @@ bool composite_mode3_hud_into_projection_image(
         projection_image_rect.extent.height > 0
         ? static_cast<uint32_t>(projection_image_rect.extent.height)
         : target_swapchain.height;
-    const bool cinema_projection =
-        route == Mode3HudProjectionRoute::Cinema;
+    const bool cinema_projection = cinema_parameters != nullptr;
     const bool automatic_full_vr_cutscene =
         route == Mode3HudProjectionRoute::FullVr;
     if (cinema_projection &&
@@ -43439,13 +43438,58 @@ static bool cinema_projection_anchor_valid{};
             // [FIX:SYMMETRIC-SUBIMAGE-COPY 4/4] Direct presentation keeps the
             // scene and HUD at their original 1:1 placement; OpenXR crops both
             // together. Only the filtered fallback needs the oversized fit.
-            const CinemaHudProjectionParameters cinema_hud_parameters{
+const CinemaHudProjectionParameters cinema_hud_parameters{
                 current_panel_views,
                 &cinema_projection_anchor,
                 cinema_projection_panel_width,
                 cinema_projection_panel_height,
                 cinema_projection_aspect_ratio,
                 !manual_cinema};
+
+            static bool s_gameplay_hud_anchor_valid = false;
+            static XrPosef s_gameplay_hud_anchor{};
+            static bool s_prev_menu_state_hud = false;
+            const bool menu_just_closed_hud = !fullscreen_menu && s_prev_menu_state_hud;
+            s_prev_menu_state_hud = fullscreen_menu;
+
+            if (menu_just_closed_hud || !s_gameplay_hud_anchor_valid) {
+                if (views_valid) {
+                    const auto& tracked_orientation = current_panel_views[0].pose.orientation;
+                    const float yaw_twist_length = sqrtf(
+                        tracked_orientation.y * tracked_orientation.y +
+                        tracked_orientation.w * tracked_orientation.w);
+                    s_gameplay_hud_anchor.orientation = yaw_twist_length > 0.000001f
+                        ? XrQuaternionf{0.0f, tracked_orientation.y / yaw_twist_length, 0.0f, tracked_orientation.w / yaw_twist_length}
+                        : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+                    const XrVector3f head_position{
+                        (current_panel_views[0].pose.position.x + current_panel_views[1].pose.position.x) * 0.5f,
+                        (current_panel_views[0].pose.position.y + current_panel_views[1].pose.position.y) * 0.5f,
+                        (current_panel_views[0].pose.position.z + current_panel_views[1].pose.position.z) * 0.5f};
+                    const auto panel_offset = rotate_vector(
+                        s_gameplay_hud_anchor.orientation,
+                        XrVector3f{0.0f, 0.0f, -1.8f});
+                    s_gameplay_hud_anchor.position = {
+                        head_position.x + panel_offset.x,
+                        head_position.y + panel_offset.y,
+                        head_position.z + panel_offset.z};
+                    s_gameplay_hud_anchor_valid = true;
+                }
+            }
+
+            const float hud_panel_width = 1.6f * g_config.hud_size;
+            const float hud_aspect_ratio = 16.0f / 9.0f;
+            const float hud_panel_height = hud_panel_width / hud_aspect_ratio;
+            const CinemaHudProjectionParameters gameplay_hud_parameters{
+                current_panel_views,
+                &s_gameplay_hud_anchor,
+                hud_panel_width,
+                hud_panel_height,
+                hud_aspect_ratio,
+                false};
+
+            const CinemaHudProjectionParameters* active_hud_parameters =
+                cinema_panel ? &cinema_hud_parameters : &gameplay_hud_parameters;
+
             const bool hud_composited =
                 composite_mode3_hud_into_projection_image(
                 swapchain, image_index, projection_image_rect,
@@ -43457,7 +43501,7 @@ static bool cinema_projection_anchor_valid{};
                 projection_eye_shifts_y_px,
                 projection_views.data(),
                 hud_scene_pair_id, hud_projection_route,
-                cinema_panel ? &cinema_hud_parameters : nullptr);
+                active_hud_parameters);
             if (hud_composited) {
                 if (collect_hud_audit) {
                     g_mode3_hud_composite_success.fetch_add(
