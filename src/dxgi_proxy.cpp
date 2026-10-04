@@ -43550,21 +43550,22 @@ void render_openxr_test_frame(
     menu_layer.subImage.swapchain = g_xr_eye_swapchains[0].handle;
     menu_layer.subImage.imageRect = menu_image_rect;
     menu_layer.subImage.imageArrayIndex = 0;
-    const bool startup_frontend_panel = fullscreen_menu &&
-        !g_engine_dual_render_active.load(std::memory_order_relaxed);
+    static bool s_prev_fullscreen_menu = false;
+    const bool menu_just_opened = fullscreen_menu && !s_prev_fullscreen_menu;
+    s_prev_fullscreen_menu = fullscreen_menu;
 
-    // Watchdog de arranque: ancla la pantalla de cine virtual en el espacio
-    // en cuanto detecta que el visor está puesto en la cabeza y estable.
-    static bool s_startup_watchdog_latched = false;
-    static XrVector3f s_startup_prev_pos{};
-    static uint32_t s_startup_stable_frames = 0;
+    // Watchdog de anclaje: congela la pantalla en el espacio tras 20 fotogramas (~0.2s)
+    // y la auto-recentra de forma inteligente cada vez que se entra a cualquier menú.
+    static bool s_menu_panel_latched = false;
+    static XrVector3f s_menu_prev_pos{};
+    static uint32_t s_menu_settle_frames = 0;
 
-    if (!startup_frontend_panel) {
-        s_startup_watchdog_latched = false;
-        s_startup_stable_frames = 0;
-    } else if ((GetAsyncKeyState(VK_F9) & 1) != 0) {
-        s_startup_watchdog_latched = false;
-        s_startup_stable_frames = 0;
+    if (!fullscreen_menu) {
+        s_menu_panel_latched = false;
+        s_menu_settle_frames = 0;
+    } else if (menu_just_opened || (GetAsyncKeyState(VK_F9) & 1) != 0) {
+        s_menu_panel_latched = false;
+        s_menu_settle_frames = 0;
     }
 
     const int spatial_panel_kind = fullscreen_menu ? 1 : (cinema_panel ? 2 : 0);
@@ -43581,7 +43582,7 @@ void render_openxr_test_frame(
     const bool should_update_anchor = panel_tracking_pose_valid &&
         (!anchored_panel_pose_valid ||
             anchored_panel_kind != spatial_panel_kind ||
-            (startup_frontend_panel && !s_startup_watchdog_latched));
+            (fullscreen_menu && !s_menu_panel_latched));
 
     if (spatial_panel_kind == 0) {
         anchored_panel_kind = 0;
@@ -43619,21 +43620,22 @@ void render_openxr_test_frame(
         anchored_panel_kind = spatial_panel_kind;
         anchored_panel_pose_valid = true;
 
-        // Comprobación del Watchdog: altura natural y estabilidad de mirada
-        if (startup_frontend_panel && !s_startup_watchdog_latched) {
-            const float dx = head_position.x - s_startup_prev_pos.x;
-            const float dy = head_position.y - s_startup_prev_pos.y;
-            const float dz = head_position.z - s_startup_prev_pos.z;
+        // Comprobación de estabilidad sin restricción de altura errónea
+        if (fullscreen_menu && !s_menu_panel_latched) {
+            const float dx = head_position.x - s_menu_prev_pos.x;
+            const float dy = head_position.y - s_menu_prev_pos.y;
+            const float dz = head_position.z - s_menu_prev_pos.z;
             const float delta_dist = sqrtf(dx * dx + dy * dy + dz * dz);
-            s_startup_prev_pos = head_position;
+            s_menu_prev_pos = head_position;
 
-            if (head_position.y >= 0.60f && delta_dist < 0.02f) {
-                s_startup_stable_frames++;
-                if (s_startup_stable_frames >= 45) {
-                    s_startup_watchdog_latched = true;
-                }
+            if (delta_dist > 0.25f) {
+                // Si te estás moviendo bruscamente (ej. poniéndote el visor), espera
+                s_menu_settle_frames = 0;
             } else {
-                s_startup_stable_frames = 0;
+                s_menu_settle_frames++;
+                if (s_menu_settle_frames >= 20) {
+                    s_menu_panel_latched = true; // CERROJO CERRADO: Inmóvil en tu habitación
+                }
             }
         }
     }
