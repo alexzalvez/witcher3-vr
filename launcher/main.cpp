@@ -244,16 +244,6 @@ void UpdateTrackLabels() {
         static_cast<float>(SendMessageW(Item(IdMenuScale), TBM_GETPOS, 0, 0)) / 100.0f).c_str());
     SetWindowTextW(Item(IdCinemaScaleValue), FormatFloat(
         static_cast<float>(SendMessageW(Item(IdCinemaScale), TBM_GETPOS, 0, 0)) / 100.0f).c_str());
-    const float cinema_hud_scale = static_cast<float>(SendMessageW(
-        Item(IdCinemaHudScale), TBM_GETPOS, 0, 0)) / 100.0f;
-    const int cinema_offset = static_cast<int>(SendMessageW(
-        Item(IdCinemaHudConvergenceOffset), TBM_GETPOS, 0, 0));
-    SetWindowTextW(Item(IdCinemaHudScaleValue),
-        FormatFloat(cinema_hud_scale).c_str());
-    SetWindowTextW(Item(IdCinemaHudConvergenceOffsetValue),
-        FormatConvergenceOffset(cinema_offset,
-            w3vr::CinemaHudConvergenceShift(
-                cinema_hud_scale, cinema_offset)).c_str());
     const float full_vr_hud_scale = static_cast<float>(SendMessageW(
         Item(IdFullVrHudScale), TBM_GETPOS, 0, 0)) / 100.0f;
     const int full_vr_offset = static_cast<int>(SendMessageW(
@@ -264,8 +254,6 @@ void UpdateTrackLabels() {
         FormatConvergenceOffset(full_vr_offset,
             w3vr::FullVrHudConvergenceShift(
                 full_vr_hud_scale, full_vr_offset)).c_str());
-    SetWindowTextW(Item(IdNearViewValue), FormatFloat(
-        static_cast<float>(SendMessageW(Item(IdNearView), TBM_GETPOS, 0, 0)) / 100.0f).c_str());
 }
 
 void UpdateModeControls() {
@@ -430,16 +418,13 @@ bool CaptureState(LauncherState& state, std::wstring& error) {
     state.cinema_aspect = static_cast<CinemaAspect>(std::clamp(
         static_cast<int>(SendMessageW(
             Item(IdCinemaAspect), CB_GETCURSEL, 0, 0)), 0, 2));
-    state.cinema_hud_scale = static_cast<float>(SendMessageW(
-        Item(IdCinemaHudScale), TBM_GETPOS, 0, 0)) / 100.0f;
-    state.cinema_hud_convergence_offset = static_cast<int>(SendMessageW(
-        Item(IdCinemaHudConvergenceOffset), TBM_GETPOS, 0, 0));
+    state.cinema_hud_scale = 1.00f;
+    state.cinema_hud_convergence_offset = 0;
     state.full_vr_hud_scale = static_cast<float>(SendMessageW(
         Item(IdFullVrHudScale), TBM_GETPOS, 0, 0)) / 100.0f;
     state.full_vr_hud_convergence_offset = static_cast<int>(SendMessageW(
         Item(IdFullVrHudConvergenceOffset), TBM_GETPOS, 0, 0));
-    state.near_view = static_cast<float>(SendMessageW(
-        Item(IdNearView), TBM_GETPOS, 0, 0)) / 100.0f;
+    state.near_view = 0.75f;
     state.vertical_pitch_enabled = SendMessageW(
         Item(IdVerticalPitch), BM_GETCHECK, 0, 0) == BST_CHECKED;
     state.first_person_gamepad_head_follow = SendMessageW(
@@ -764,16 +749,10 @@ void RestoreLauncherDefaults() {
         static_cast<int>(std::lround(defaults.cinema_scale * 100.0f)));
     SendMessageW(Item(IdCinemaAspect), CB_SETCURSEL,
         static_cast<int>(defaults.cinema_aspect), 0);
-    SendMessageW(Item(IdCinemaHudScale), TBM_SETPOS, TRUE,
-        static_cast<int>(std::lround(defaults.cinema_hud_scale * 100.0f)));
-    SendMessageW(Item(IdCinemaHudConvergenceOffset), TBM_SETPOS, TRUE,
-        defaults.cinema_hud_convergence_offset);
     SendMessageW(Item(IdFullVrHudScale), TBM_SETPOS, TRUE,
         static_cast<int>(std::lround(defaults.full_vr_hud_scale * 100.0f)));
     SendMessageW(Item(IdFullVrHudConvergenceOffset), TBM_SETPOS, TRUE,
         defaults.full_vr_hud_convergence_offset);
-    SendMessageW(Item(IdNearView), TBM_SETPOS, TRUE,
-        static_cast<int>(std::lround(defaults.near_view * 100.0f)));
     SendMessageW(Item(IdVerticalPitch), BM_SETCHECK, BST_UNCHECKED, 0);
     SendMessageW(Item(IdFirstPersonGamepadHeadFollow), BM_SETCHECK,
         defaults.first_person_gamepad_head_follow
@@ -940,16 +919,10 @@ HWND resolution = Item(IdResolution);
         static_cast<int>(std::lround(loaded.state.cinema_scale * 100.0f)));
     SendMessageW(cinema_aspect, CB_SETCURSEL,
         static_cast<int>(loaded.state.cinema_aspect), 0);
-    SendMessageW(Item(IdCinemaHudScale), TBM_SETPOS, TRUE,
-        static_cast<int>(std::lround(loaded.state.cinema_hud_scale * 100.0f)));
-    SendMessageW(Item(IdCinemaHudConvergenceOffset), TBM_SETPOS, TRUE,
-        loaded.state.cinema_hud_convergence_offset);
     SendMessageW(Item(IdFullVrHudScale), TBM_SETPOS, TRUE,
         static_cast<int>(std::lround(loaded.state.full_vr_hud_scale * 100.0f)));
     SendMessageW(Item(IdFullVrHudConvergenceOffset), TBM_SETPOS, TRUE,
         loaded.state.full_vr_hud_convergence_offset);
-    SendMessageW(Item(IdNearView), TBM_SETPOS, TRUE,
-        static_cast<int>(std::lround(loaded.state.near_view * 100.0f)));
     SendMessageW(Item(IdVerticalPitch), BM_SETCHECK,
         loaded.state.vertical_pitch_enabled ? BST_CHECKED : BST_UNCHECKED, 0);
     SendMessageW(Item(IdFirstPersonGamepadHeadFollow), BM_SETCHECK,
@@ -1072,36 +1045,18 @@ void CreateInterface(HWND window) {
          AddLabel(L"Aspect", 510, 266, 58, 22),
          AddCombo(575, 258, 104, IdCinemaAspect)});
 
-    AddTooltips(
-        L"Adjusts the close third-person camera preset selected with F8.",
-        {AddLabel(L"Near View", 38, 304, 170, 22),
-         AddTrack(205, 298, 405, IdNearView, -200, 300),
-         AddLabel(L"0.75", 625, 304, 54, 22,
-             IdNearViewValue, SS_RIGHT)});
-
-    AddTooltips(
-        L"Cinema3D HUD size and convergence offset.",
-        {AddLabel(L"Cinema3D HUD size", 38, 342, 145, 22),
-         AddTrack(188, 336, 112, IdCinemaHudScale, 50, 150),
-         AddLabel(L"1.30", 302, 342, 46, 22,
-             IdCinemaHudScaleValue, SS_RIGHT),
-         AddLabel(L"Cinema3D conv. offset", 365, 342, 145, 22),
-         AddTrack(510, 336, 100, IdCinemaHudConvergenceOffset, -64, 64),
-         AddLabel(L"-36", 612, 342, 67, 22,
-             IdCinemaHudConvergenceOffsetValue, SS_RIGHT)});
-
     AddTooltip(AddControl(L"BUTTON", L"Faster Movement Transitions",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 380, 285, 26,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 310, 285, 26,
         IdFastMovementTransitions),
         L"Enables faster transitions between movement states.");
 
     AddTooltip(AddControl(L"BUTTON", L"Hide Static HUD Outside Combat",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 365, 380, 315, 26,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 365, 310, 315, 26,
         IdHideStaticHudOutsideCombat),
         L"Hides static HUD elements outside combat.");
 
     AddTooltip(AddControl(L"BUTTON", L"Diagnostic Logging",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 410, 300, 26,
+        BS_AUTOCHECKBOX | WS_TABSTOP, 38, 345, 300, 26,
         IdDiagnosticLogging),
         L"Writes witcher3vr.log for troubleshooting.");
 
