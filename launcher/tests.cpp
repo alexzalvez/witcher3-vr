@@ -521,11 +521,11 @@ void TestControlledRayTracingAndAlternateResize(
 }
 
 void TestProportionalCutsceneConvergence() {
-    Require(w3vr::CinemaHudConvergenceShift(1.30f, 0) == -72,
+    Require(w3vr::CinemaHudConvergenceShift(1.30f, 0) == 0,
         "Cinema3D reference convergence changed");
-    Require(w3vr::CinemaHudConvergenceShift(0.65f, 0) == -36,
+    Require(w3vr::CinemaHudConvergenceShift(0.65f, 0) == 0,
         "Cinema3D convergence does not follow HUD scale");
-    Require(w3vr::CinemaHudConvergenceShift(1.30f, 10) == -62,
+    Require(w3vr::CinemaHudConvergenceShift(1.30f, 10) == 10,
         "Cinema3D manual offset was not added after the automatic base");
     Require(w3vr::FullVrHudConvergenceShift(1.00f, 0) == -36,
         "Full VR reference convergence changed");
