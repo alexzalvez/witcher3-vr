@@ -43550,15 +43550,24 @@ void render_openxr_test_frame(
     menu_layer.subImage.swapchain = g_xr_eye_swapchains[0].handle;
     menu_layer.subImage.imageRect = menu_image_rect;
     menu_layer.subImage.imageArrayIndex = 0;
-    // The frontend can report a formally valid LOCAL pose at floor height
-    // before REDengine's stereo renderer is active. Keep only that startup
-    // menu in VIEW space; pause/inventory menus remain LOCAL world-locked.
-    const bool startup_frontend_panel = fullscreen_menu &&
+const bool startup_frontend_panel = fullscreen_menu &&
         !g_engine_dual_render_active.load(std::memory_order_relaxed);
-    const int spatial_panel_kind = startup_frontend_panel
-        ? 0
-        : (fullscreen_menu ? 1
-        : (cinema_panel ? 2 : 0));
+
+    // Watchdog de arranque: ancla la pantalla de cine virtual en el espacio
+    // en cuanto detecta que el visor está puesto en la cabeza y estable.
+    static bool s_startup_watchdog_latched = false;
+    static XrVector3f s_startup_prev_pos{};
+    static uint32_t s_startup_stable_frames = 0;
+
+    if (!startup_frontend_panel) {
+        s_startup_watchdog_latched = false;
+        s_startup_stable_frames = 0;
+    } else if ((GetAsyncKeyState(VK_F9) & 1) != 0) {
+        s_startup_watchdog_latched = false;
+        s_startup_stable_frames = 0;
+    }
+
+    const int spatial_panel_kind = fullscreen_menu ? 1 : (cinema_panel ? 2 : 0);
     static int anchored_panel_kind{};
     static bool anchored_panel_pose_valid{};
     static XrPosef anchored_panel_pose{};
@@ -43568,12 +43577,66 @@ void render_openxr_test_frame(
     const bool panel_tracking_pose_valid = views_valid &&
         (located_view_state_flags & required_panel_pose_flags) ==
             required_panel_pose_flags;
+
+    const bool should_update_anchor = panel_tracking_pose_valid &&
+        (!anchored_panel_pose_valid ||
+            anchored_panel_kind != spatial_panel_kind ||
+            (startup_frontend_panel && !s_startup_watchdog_latched));
+
     if (spatial_panel_kind == 0) {
         anchored_panel_kind = 0;
         anchored_panel_pose_valid = false;
-    } else if (panel_tracking_pose_valid &&
-        (!anchored_panel_pose_valid ||
-            anchored_panel_kind != spatial_panel_kind)) {
+    } else if (should_update_anchor) {
+        const XrView* anchor_views =
+            isolate_publication_pose && !frame_was_prepared
+            ? publication_views.data()
+            : g_xr_views.data();
+        const auto& tracked_orientation =
+            anchor_views[0].pose.orientation;
+        const float yaw_twist_length = sqrtf(
+            tracked_orientation.y * tracked_orientation.y +
+            tracked_orientation.w * tracked_orientation.w);
+        anchored_panel_pose.orientation = yaw_twist_length > 0.000001f
+            ? XrQuaternionf{0.0f,
+                  tracked_orientation.y / yaw_twist_length,
+                  0.0f,
+                  tracked_orientation.w / yaw_twist_length}
+            : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+        const XrVector3f head_position{
+            (anchor_views[0].pose.position.x +
+                anchor_views[1].pose.position.x) * 0.5f,
+            (anchor_views[0].pose.position.y +
+                anchor_views[1].pose.position.y) * 0.5f,
+            (anchor_views[0].pose.position.z +
+                anchor_views[1].pose.position.z) * 0.5f};
+        const auto panel_offset = rotate_vector(
+            anchored_panel_pose.orientation,
+            XrVector3f{0.0f, 0.0f, -g_config.menu_distance});
+        anchored_panel_pose.position = {
+            head_position.x + panel_offset.x,
+            head_position.y + panel_offset.y,
+            head_position.z + panel_offset.z};
+        anchored_panel_kind = spatial_panel_kind;
+        anchored_panel_pose_valid = true;
+
+        // Comprobación del Watchdog: altura natural y estabilidad de mirada
+        if (startup_frontend_panel && !s_startup_watchdog_latched) {
+            const float dx = head_position.x - s_startup_prev_pos.x;
+            const float dy = head_position.y - s_startup_prev_pos.y;
+            const float dz = head_position.z - s_startup_prev_pos.z;
+            const float delta_dist = sqrtf(dx * dx + dy * dy + dz * dz);
+            s_startup_prev_pos = head_position;
+
+            if (head_position.y >= 0.60f && delta_dist < 0.02f) {
+                s_startup_stable_frames++;
+                if (s_startup_stable_frames >= 45) {
+                    s_startup_watchdog_latched = true;
+                }
+            } else {
+                s_startup_stable_frames = 0;
+            }
+        }
+    }
         const XrView* anchor_views =
             isolate_publication_pose && !frame_was_prepared
             ? publication_views.data()
