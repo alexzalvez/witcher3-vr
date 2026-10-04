@@ -1493,18 +1493,14 @@ bool BuildUpdatedDocuments(const ConfigPaths& paths, const LauncherState& state,
             ? "1" : "0");
     vr_ini.Set("openxr", "alternate_presentation_resize",
         alternate_presentation_resize_active ? "1" : "0");
-    vr_ini.Set("openxr", "hud_stereo_shift_px",
-        std::to_string(std::clamp(state.hud_convergence_delta - 16, -256, 256)));
+    vr_ini.Set("openxr", "hud_stereo_shift_px", "0");
     vr_ini.Set("openxr", "presentation_scale", FloatString(
         state.presentation_scale));
     vr_ini.Set("openxr", "menu_scale", FloatString(state.menu_scale));
     vr_ini.Set("openxr", "cinema_scale", FloatString(state.cinema_scale));
-    vr_ini.Set("openxr", "cinema_hud_scale",
-        FloatString(state.cinema_hud_scale));
-    vr_ini.Set("openxr", "cinema_hud_stereo_shift_px",
-        std::to_string(CinemaHudConvergenceShift(
-            state.cinema_hud_scale,
-            state.cinema_hud_convergence_offset)));
+    vr_ini.Set("openxr", "cinema_render_stereo_strength", "0.036");
+    vr_ini.Set("openxr", "cinema_hud_scale", "1.000");
+    vr_ini.Set("openxr", "cinema_hud_stereo_shift_px", "0");
     vr_ini.Set("openxr", "full_vr_hud_scale",
         FloatString(state.full_vr_hud_scale));
     vr_ini.Set("openxr", "full_vr_hud_stereo_shift_px",
