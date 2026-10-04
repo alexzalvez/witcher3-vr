@@ -2215,7 +2215,7 @@ std::atomic<uint64_t> g_engine_animated_component_visibility_forces{};
 thread_local uint64_t g_engine_producer_pair_id{};
 using EngineIsAnyMenuFn = void(__fastcall*)(void*, void*, uint8_t*);
 EngineIsAnyMenuFn g_engine_is_any_menu{};
-std::atomic<int> g_engine_menu_state{0};
+std::atomic<int> g_engine_menu_state{-1};
 
 // [FIX:AER-AFW-CINEMA-HUD-RESTORE V1190 1/4] AFW is suspended in normal or
 // manual Cinema, so its HUD must remain on the already validated per-eye
@@ -33676,12 +33676,6 @@ void apply_engine_dual_render_transition(bool enabled, const char* source) {
     }
 
     const auto present = g_present_count.load();
-    if (enabled) {
-        if (g_engine_menu_state.load(std::memory_order_relaxed) < 0) {
-            g_engine_menu_state.store(0, std::memory_order_relaxed);
-        }
-        arm_post_loading_dlss_watchdog(present);
-    }
     const auto generation = g_streamline_capture_generation.fetch_add(1) + 1;
     reset_native_asymmetric_noaa_state();
     g_streamline_capture_latest_slot[0].store(UINT32_MAX);
@@ -33949,13 +33943,9 @@ void* __fastcall hook_engine_frame_data_factory(void* render_context, void* rend
             "reason=post_video_cinema",
             static_cast<unsigned long long>(present));
     }
-    if ((hmd_camera_recent || automatic_full_vr_bootstrap) && !native_loading_video &&
-        g_engine_menu_state.load(std::memory_order_relaxed) < 0) {
-        g_engine_menu_state.store(0, std::memory_order_relaxed);
-    }
     const bool dual_render_auto_ready = g_config.engine_dual_render_start &&
         !native_loading_video &&
-        g_engine_menu_state.load(std::memory_order_relaxed) <= 0 &&
+        g_engine_menu_state.load(std::memory_order_relaxed) == 0 &&
         (hmd_camera_recent || automatic_full_vr_bootstrap) &&
         render_context != nullptr && render_settings != nullptr &&
         scene_descriptor != nullptr;
@@ -33980,7 +33970,7 @@ void* __fastcall hook_engine_frame_data_factory(void* render_context, void* rend
         (g_engine_dual_gameplay_armed.load(std::memory_order_relaxed) ||
             cinema_geometry_route) &&
         g_config.openxr_mode == 3 &&
-        g_engine_menu_state.load(std::memory_order_relaxed) <= 0 &&
+        g_engine_menu_state.load(std::memory_order_relaxed) == 0 &&
         present >= g_engine_pair_retry_present.load(std::memory_order_relaxed) &&
         scene_descriptor != nullptr;
     // [FIX:MODE3-AER-SINGLE-PRODUCER V12034 1/2] V12032 made OpenXR publish
@@ -40590,18 +40580,11 @@ void render_openxr_test_frame(
     // running so an immediately following cutscene is already armed, but
     // publish the live final backbuffer as a mono panel instead of promoting
     // the missing-camera interval to the cinema Full VR projection route.
+    const bool fullscreen_menu =
+        g_engine_menu_state.load() != 0 || loading_video;
     const auto last_hmd_camera = g_engine_hmd_camera_last_present.load(
         std::memory_order_relaxed);
     constexpr uint64_t kCinemaExitCameraAge = 8;
-    const bool hmd_camera_active = last_hmd_camera != UINT64_MAX &&
-        current_present >= last_hmd_camera &&
-        current_present - last_hmd_camera <= kCinemaExitCameraAge;
-    if (hmd_camera_active && !loading_video &&
-        g_engine_menu_state.load(std::memory_order_relaxed) < 0) {
-        g_engine_menu_state.store(0, std::memory_order_relaxed);
-    }
-    const bool fullscreen_menu =
-        (hmd_camera_active ? g_engine_menu_state.load() == 1 : g_engine_menu_state.load() != 0) || loading_video;
     const uint64_t loading_video_exit_present =
         g_engine_loading_screen_video_exit_present.load(
             std::memory_order_acquire);
