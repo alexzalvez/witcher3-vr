@@ -40848,7 +40848,7 @@ static bool cinema_projection_anchor_valid{};
             (current_panel_views[0].pose.position.z + current_panel_views[1].pose.position.z) * 0.5f};
         const auto panel_offset = rotate_vector(
             s_gameplay_hud_anchor.orientation,
-            XrVector3f{0.0f, 0.0f, -1.2f});
+            XrVector3f{0.0f, 0.0f, -1.0f});
         s_gameplay_hud_anchor.position = {
             head_position.x + panel_offset.x,
             head_position.y + panel_offset.y,
