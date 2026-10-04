@@ -40829,6 +40829,32 @@ static bool cinema_projection_anchor_valid{};
     const bool menu_closed_anchor = !fullscreen_menu && s_prev_menu_state_anchor;
     s_prev_menu_state_anchor = fullscreen_menu;
 
+    static bool s_gameplay_hud_anchor_valid = false;
+    static XrPosef s_gameplay_hud_anchor{};
+
+    if (menu_closed_anchor || (GetAsyncKeyState(VK_F9) & 1) != 0) {
+        s_gameplay_hud_anchor_valid = false;
+    } else if (!s_gameplay_hud_anchor_valid && views_valid) {
+        const auto& tracked_orientation = current_panel_views[0].pose.orientation;
+        const float yaw_twist_length = sqrtf(
+            tracked_orientation.y * tracked_orientation.y +
+            tracked_orientation.w * tracked_orientation.w);
+        s_gameplay_hud_anchor.orientation = yaw_twist_length > 0.000001f
+            ? XrQuaternionf{0.0f, tracked_orientation.y / yaw_twist_length, 0.0f, tracked_orientation.w / yaw_twist_length}
+            : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+        const XrVector3f head_position{
+            (current_panel_views[0].pose.position.x + current_panel_views[1].pose.position.x) * 0.5f,
+            (current_panel_views[0].pose.position.y + current_panel_views[1].pose.position.y) * 0.5f,
+            (current_panel_views[0].pose.position.z + current_panel_views[1].pose.position.z) * 0.5f};
+        const auto panel_offset = rotate_vector(
+            s_gameplay_hud_anchor.orientation,
+            XrVector3f{0.0f, 0.0f, -1.3f});
+        s_gameplay_hud_anchor.position = {
+            head_position.x + panel_offset.x,
+            head_position.y + panel_offset.y,
+            head_position.z + panel_offset.z};
+        s_gameplay_hud_anchor_valid = true;
+    }
     
 
     if (!spatial_cinema_active || menu_opened_anchor || (GetAsyncKeyState(VK_F9) & 1) != 0) {
@@ -43481,6 +43507,17 @@ const CinemaHudProjectionParameters cinema_hud_parameters{
                 projection_views.data(),
                 hud_scene_pair_id, hud_projection_route,
                 active_hud_parameters);
+            if (hud_composited) {
+                if (collect_hud_audit) {
+                    g_mode3_hud_composite_success.fetch_add(
+                        1, std::memory_order_relaxed);
+                }
+            } else {
+                if (collect_hud_audit) {
+                    g_mode3_hud_composite_failures.fetch_add(
+                        1, std::memory_order_relaxed);
+                }
+                hud_composite_ready = false;
                 // [FIX:HUD-COMPOSITE-RETRY 1/1] This is a per-frame readiness
                 // miss, not proof that the initialized HUD pipeline is unusable.
                 // Permanently clearing g_mode3_hud_layer_available here makes one
