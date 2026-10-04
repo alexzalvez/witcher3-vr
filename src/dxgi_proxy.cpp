@@ -40848,7 +40848,7 @@ static bool cinema_projection_anchor_valid{};
             (current_panel_views[0].pose.position.z + current_panel_views[1].pose.position.z) * 0.5f};
         const auto panel_offset = rotate_vector(
             s_gameplay_hud_anchor.orientation,
-            XrVector3f{0.0f, 0.0f, -1.3f});
+            XrVector3f{0.0f, 0.0f, -1.2f});
         s_gameplay_hud_anchor.position = {
             head_position.x + panel_offset.x,
             head_position.y + panel_offset.y,
@@ -43482,7 +43482,9 @@ const CinemaHudProjectionParameters cinema_hud_parameters{
             }
 
             const float hud_panel_width = 2.1f * g_config.hud_size;
-            const float hud_aspect_ratio = 16.0f / 9.0f;
+            const float hud_aspect_ratio = swapchain.height > 0
+                ? static_cast<float>(swapchain.width) / static_cast<float>(swapchain.height)
+                : 1.0f;
             const float hud_panel_height = hud_panel_width / hud_aspect_ratio;
             const CinemaHudProjectionParameters gameplay_hud_parameters{
                 hud_scene_views.data(),
