@@ -243,6 +243,7 @@ struct Config {
     bool cinema_full_vr{false};
     bool steady_icons{false};
     float menu_distance{1.5f};
+    bool curved_screen{true};
     float cinema_render_stereo_strength{1.0f};
     int cinema_hud_stereo_shift_px{-72};
     float manual_cinema_hud_scale{1.25f};
@@ -877,7 +878,27 @@ PFN_xrBeginFrame pfn_xrBeginFrame{};
 PFN_xrEndFrame pfn_xrEndFrame{};
 PFN_xrLocateViews pfn_xrLocateViews{};
 PFN_xrGetVisibilityMaskKHR pfn_xrGetVisibilityMaskKHR{};
+#ifndef XR_KHR_composition_layer_cylinder
+#define XR_KHR_composition_layer_cylinder 1
+#define XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR static_cast<XrStructureType>(1000017000)
+#define XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME "XR_KHR_composition_layer_cylinder"
+
+typedef struct XrCompositionLayerCylinderKHR {
+    XrStructureType             type;
+    const void*                 next;
+    XrCompositionLayerFlags     layerFlags;
+    XrSpace                     space;
+    XrEyeVisibility             eyeVisibility;
+    XrSwapchainSubImage         subImage;
+    XrPosef                     pose;
+    float                       radius;
+    float                       centralAngle;
+    float                       aspectRatio;
+} XrCompositionLayerCylinderKHR;
+#endif
+
 bool g_xr_visibility_mask_extension_enabled{};
+bool g_xr_cylinder_extension_enabled{};
 struct XrVisibilityBounds {
     float min_x{};
     float max_x{};
@@ -11277,6 +11298,8 @@ void load_config() {
             "openxr", "steady_icons", false);
         g_config.menu_distance = std::clamp(
             read_ini_float("openxr", "menu_distance", 1.5f), 0.5f, 5.0f);
+        g_config.curved_screen = read_ini_bool(
+            "openxr", "curved_screen", true);
         // Missing keys preserve the pre-V865 cinema exactly: full REDengine
         // baseline and the original zero-shift HUD composite.
         g_config.cinema_render_stereo_strength = std::clamp(
@@ -38202,7 +38225,13 @@ void initialize_openxr_probe() {
                         g_xr_visibility_mask_extension_enabled = true;
                         extensions.push_back(
                             XR_KHR_VISIBILITY_MASK_EXTENSION_NAME);
-                        break;
+                    }
+                    if (strcmp(
+                            property.extensionName,
+                            XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME) == 0) {
+                        g_xr_cylinder_extension_enabled = true;
+                        extensions.push_back(
+                            XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
                     }
                 }
             }
@@ -43806,10 +43835,27 @@ const CinemaHudProjectionParameters cinema_hud_parameters{
             g_game_render_width, g_game_render_height);
     }
 
+    const bool use_cylinder = g_config.curved_screen && g_xr_cylinder_extension_enabled;
+    XrCompositionLayerCylinderKHR cylinder_layer{XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR};
+    if (use_cylinder) {
+        cylinder_layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+        cylinder_layer.subImage = menu_layer.subImage;
+        cylinder_layer.space = menu_layer.space;
+        cylinder_layer.pose = menu_layer.pose;
+        cylinder_layer.radius = std::max(0.5f, g_config.menu_distance);
+        cylinder_layer.centralAngle = std::clamp(
+            menu_layer.size.width / cylinder_layer.radius, 0.1f, 3.14159f);
+        cylinder_layer.aspectRatio = menu_layer.size.height > 0.001f
+            ? (menu_layer.size.width / menu_layer.size.height)
+            : (16.0f / 9.0f);
+    }
+
     const XrCompositionLayerBaseHeader* projection_layers[] = {
         reinterpret_cast<const XrCompositionLayerBaseHeader*>(&projection_layer)};
     const XrCompositionLayerBaseHeader* menu_layers[] = {
-        reinterpret_cast<const XrCompositionLayerBaseHeader*>(&menu_layer)};
+        use_cylinder
+            ? reinterpret_cast<const XrCompositionLayerBaseHeader*>(&cylinder_layer)
+            : reinterpret_cast<const XrCompositionLayerBaseHeader*>(&menu_layer)};
 
     XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
     end_info.displayTime = frame_state.predictedDisplayTime;
@@ -43817,8 +43863,8 @@ const CinemaHudProjectionParameters cinema_hud_parameters{
 if (!submitted) {
         end_info.layerCount = 0;
         end_info.layers = nullptr;
-    } else if ((fullscreen_menu || cinema_panel) && cinema_projection_panel_ready) {
-        // Pantalla de cine 3D fija con proyeccion estereo nativa para cinematograficas y menus
+    } else if ((fullscreen_menu || cinema_panel) && cinema_projection_panel_ready && !use_cylinder) {
+        // Pantalla de cine 3D fija con proyeccion estereo nativa para cinematograficas y menus (modo plano)
         end_info.layerCount = 1;
         end_info.layers = projection_layers;
     } else if (fullscreen_menu) {
