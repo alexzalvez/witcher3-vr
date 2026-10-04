@@ -37193,7 +37193,7 @@ bool composite_mode3_hud_into_projection_image(
             static_cast<uint32_t>(source_shift_y),
             0,
             0,
-            headset_projection ? 1u : 0u,
+            (headset_projection || cinema_parameters != nullptr) ? 1u : 0u,
             distance_converged_reticle ? 1u : 0u,
             0, 0};
         memcpy(&sampling_constants[2], &hud_scale_x, sizeof(hud_scale_x));
@@ -40826,7 +40826,35 @@ static bool cinema_projection_anchor_valid{};
     const bool spatial_cinema_active = cinema_panel || fullscreen_menu;
     static bool s_prev_menu_state_anchor = false;
     const bool menu_opened_anchor = fullscreen_menu && !s_prev_menu_state_anchor;
+    const bool menu_closed_anchor = !fullscreen_menu && s_prev_menu_state_anchor;
     s_prev_menu_state_anchor = fullscreen_menu;
+
+    static bool s_gameplay_hud_anchor_valid = false;
+    static XrPosef s_gameplay_hud_anchor{};
+
+    if (menu_closed_anchor || (GetAsyncKeyState(VK_F9) & 1) != 0) {
+        s_gameplay_hud_anchor_valid = false;
+    } else if (!s_gameplay_hud_anchor_valid && views_valid) {
+        const auto& tracked_orientation = current_panel_views[0].pose.orientation;
+        const float yaw_twist_length = sqrtf(
+            tracked_orientation.y * tracked_orientation.y +
+            tracked_orientation.w * tracked_orientation.w);
+        s_gameplay_hud_anchor.orientation = yaw_twist_length > 0.000001f
+            ? XrQuaternionf{0.0f, tracked_orientation.y / yaw_twist_length, 0.0f, tracked_orientation.w / yaw_twist_length}
+            : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
+        const XrVector3f head_position{
+            (current_panel_views[0].pose.position.x + current_panel_views[1].pose.position.x) * 0.5f,
+            (current_panel_views[0].pose.position.y + current_panel_views[1].pose.position.y) * 0.5f,
+            (current_panel_views[0].pose.position.z + current_panel_views[1].pose.position.z) * 0.5f};
+        const auto panel_offset = rotate_vector(
+            s_gameplay_hud_anchor.orientation,
+            XrVector3f{0.0f, 0.0f, -1.3f});
+        s_gameplay_hud_anchor.position = {
+            head_position.x + panel_offset.x,
+            head_position.y + panel_offset.y,
+            head_position.z + panel_offset.z};
+        s_gameplay_hud_anchor_valid = true;
+    }
 
     if (!spatial_cinema_active || menu_opened_anchor || (GetAsyncKeyState(VK_F9) & 1) != 0) {
         cinema_projection_anchor_valid = false;
@@ -43476,11 +43504,17 @@ const CinemaHudProjectionParameters cinema_hud_parameters{
                 }
             }
 
-            const float hud_panel_width = 1.6f * g_config.hud_size;
+            std::array<XrView, 2> hud_scene_views{};
+            for (uint32_t eye = 0; eye < 2; ++eye) {
+                hud_scene_views[eye].pose = projection_views[eye].pose;
+                hud_scene_views[eye].fov = projection_views[eye].fov;
+            }
+
+            const float hud_panel_width = 2.1f * g_config.hud_size;
             const float hud_aspect_ratio = 16.0f / 9.0f;
             const float hud_panel_height = hud_panel_width / hud_aspect_ratio;
             const CinemaHudProjectionParameters gameplay_hud_parameters{
-                current_panel_views,
+                hud_scene_views.data(),
                 &s_gameplay_hud_anchor,
                 hud_panel_width,
                 hud_panel_height,
