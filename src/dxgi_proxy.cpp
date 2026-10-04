@@ -43550,7 +43550,7 @@ void render_openxr_test_frame(
     menu_layer.subImage.swapchain = g_xr_eye_swapchains[0].handle;
     menu_layer.subImage.imageRect = menu_image_rect;
     menu_layer.subImage.imageArrayIndex = 0;
-const bool startup_frontend_panel = fullscreen_menu &&
+    const bool startup_frontend_panel = fullscreen_menu &&
         !g_engine_dual_render_active.load(std::memory_order_relaxed);
 
     // Watchdog de arranque: ancla la pantalla de cine virtual en el espacio
@@ -43636,54 +43636,6 @@ const bool startup_frontend_panel = fullscreen_menu &&
                 s_startup_stable_frames = 0;
             }
         }
-    }
-        const XrView* anchor_views =
-            isolate_publication_pose && !frame_was_prepared
-            ? publication_views.data()
-            : g_xr_views.data();
-        const auto& tracked_orientation =
-            anchor_views[0].pose.orientation;
-        // [FIX:LEVEL-SPATIAL-PANEL 1/1] Keep panels upright in the LOCAL
-        // gravity frame. Startup often catches the headset while it is being
-        // put on; preserving that transient pitch anchored the first menu far
-        // below eye level for the rest of the frontend session.
-        const float yaw_twist_length = sqrtf(
-            tracked_orientation.y * tracked_orientation.y +
-            tracked_orientation.w * tracked_orientation.w);
-        anchored_panel_pose.orientation = yaw_twist_length > 0.000001f
-            ? XrQuaternionf{0.0f,
-                  tracked_orientation.y / yaw_twist_length,
-                  0.0f,
-                  tracked_orientation.w / yaw_twist_length}
-            : XrQuaternionf{0.0f, 0.0f, 0.0f, 1.0f};
-        const XrVector3f head_position{
-            (anchor_views[0].pose.position.x +
-                anchor_views[1].pose.position.x) * 0.5f,
-            (anchor_views[0].pose.position.y +
-                anchor_views[1].pose.position.y) * 0.5f,
-            (anchor_views[0].pose.position.z +
-                anchor_views[1].pose.position.z) * 0.5f};
-        const auto panel_offset = rotate_vector(
-            anchored_panel_pose.orientation,
-            XrVector3f{0.0f, 0.0f, -g_config.menu_distance});
-        anchored_panel_pose.position = {
-            head_position.x + panel_offset.x,
-            head_position.y + panel_offset.y,
-            head_position.z + panel_offset.z};
-        anchored_panel_kind = spatial_panel_kind;
-        anchored_panel_pose_valid = true;
-        log_taau_trace_line(
-            "OpenXR spatial panel anchored kind=%s present=%llu "
-            "position=%.4f,%.4f,%.4f orientation=%.5f,%.5f,%.5f,%.5f",
-            fullscreen_menu ? "menu" : "cinema",
-            static_cast<unsigned long long>(current_present),
-            anchored_panel_pose.position.x,
-            anchored_panel_pose.position.y,
-            anchored_panel_pose.position.z,
-            anchored_panel_pose.orientation.x,
-            anchored_panel_pose.orientation.y,
-            anchored_panel_pose.orientation.z,
-            anchored_panel_pose.orientation.w);
     }
     // Before OpenXR reports a valid tracked pose, keep the startup panel in
     // VIEW space instead of placing it at LOCAL origin (which can be floor
