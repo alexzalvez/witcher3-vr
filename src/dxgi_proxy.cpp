@@ -2727,6 +2727,7 @@ struct SequentialDlssHistoryBinding {
     uint32_t native_reset_suppression_streak{};
 };
 std::mutex g_sequential_dlss_handle_mutex{};
+std::atomic<uint32_t> g_post_loading_dlss_watchdog_frames{0};
 const NVSDK_NGX_Handle* g_sequential_dlss_latest_histories[2]{};
 uint64_t g_sequential_dlss_latest_history_generations[2]{};
 bool g_sequential_dlss_latest_history_needs_reset[2]{};
@@ -19622,7 +19623,6 @@ void arm_post_loading_taau_history_reset(uint64_t present) {
     if (!taau_stereo_route_active()) {
         return;
     }
-
     // [FIX:POST-LOADING-TAAU-HISTORY V1258 1/3] Revoke submission identities
     // from the preceding scene immediately, but retain the private textures.
     // The per-eye reset bit is consumed only by a strictly newer incoming pair,
@@ -19636,6 +19636,24 @@ void arm_post_loading_taau_history_reset(uint64_t present) {
     }
     log_line(
         "V1258 post-loading TAAU history reset armed present=%llu mask=0x3",
+        static_cast<unsigned long long>(present));
+}
+
+void arm_post_loading_dlss_watchdog(uint64_t present) {
+    if (!dlss_sequential_mode_active()) {
+        return;
+    }
+    g_post_loading_dlss_watchdog_frames.store(60, std::memory_order_release);
+    std::scoped_lock lock{g_sequential_dlss_handle_mutex};
+    for (uint32_t eye = 0; eye < 2; ++eye) {
+        g_sequential_dlss_latest_history_needs_reset[eye] = true;
+        for (auto& pair : g_sequential_dlss_source_histories[eye]) {
+            pair.second.needs_reset = true;
+            pair.second.native_reset_latched = false;
+            pair.second.native_reset_suppression_streak = 0;
+        }
+    }
+    log_line("Post-loading Stereo-DLSS watchdog armed present=%llu frames=60",
         static_cast<unsigned long long>(present));
 }
 
@@ -25596,8 +25614,12 @@ uint32_t __fastcall hook_engine_upscaler_pipeline(
         g_sequential_pipeline_eye = g_engine_render_eye;
     }
 
-    if (dlss_sequential_mode_active() && g_engine_render_eye == 0 &&
+    const bool watchdog_active = g_post_loading_dlss_watchdog_frames.load(std::memory_order_relaxed) > 0;
+    if (dlss_sequential_mode_active() && (g_engine_render_eye <= 0 || watchdog_active) &&
         frame_data != nullptr) {
+        if (watchdog_active && g_engine_render_eye == 1) {
+            g_post_loading_dlss_watchdog_frames.fetch_sub(1, std::memory_order_relaxed);
+        }
         __try {
             constexpr uintptr_t kStreamlineInterfaceRva = 0x057F59E0;
             auto* module = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
@@ -32566,6 +32588,7 @@ void __fastcall hook_engine_is_loading_screen_video_playing(
             0, std::memory_order_release);
     } else if (!active && previous) {
         arm_post_loading_taau_history_reset(present);
+        arm_post_loading_dlss_watchdog(present);
         g_post_loading_auto_recenter_deadline_ms.store(
             GetTickCount64() + kPostLoadingAutoRecenterDelayMs,
             std::memory_order_release);
@@ -32656,6 +32679,8 @@ bool poll_engine_loading_screen_video_state() {
             0, std::memory_order_release);
     } else if (!active && previous) {
         arm_post_loading_taau_history_reset(
+            g_present_count.load(std::memory_order_relaxed));
+        arm_post_loading_dlss_watchdog(
             g_present_count.load(std::memory_order_relaxed));
         g_post_loading_auto_recenter_deadline_ms.store(
             GetTickCount64() + kPostLoadingAutoRecenterDelayMs,
@@ -40848,7 +40873,7 @@ static bool cinema_projection_anchor_valid{};
             (current_panel_views[0].pose.position.z + current_panel_views[1].pose.position.z) * 0.5f};
         const auto panel_offset = rotate_vector(
             s_gameplay_hud_anchor.orientation,
-            XrVector3f{0.0f, 0.0f, -1.0f});
+            XrVector3f{0.0f, 0.0f, -1.3f});
         s_gameplay_hud_anchor.position = {
             head_position.x + panel_offset.x,
             head_position.y + panel_offset.y,
