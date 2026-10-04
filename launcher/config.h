@@ -63,8 +63,8 @@ struct LauncherState {
     float menu_scale{1.0f};
     float cinema_scale{1.0f};
     CinemaAspect cinema_aspect{CinemaAspect::FourThree};
-    float cinema_hud_scale{1.30f};
-    int cinema_hud_convergence_offset{-36};
+    float cinema_hud_scale{1.00f};
+    int cinema_hud_convergence_offset{0};
     float full_vr_hud_scale{1.00f};
     int full_vr_hud_convergence_offset{-36};
     float near_view{0.75f};
