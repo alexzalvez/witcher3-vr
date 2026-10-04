@@ -26,8 +26,8 @@ constexpr std::array<ModeSettings, 5> kModes{{
 
 constexpr int kCurrentConfigVersion = 13;
 constexpr char kDefaultRayTracingHistoryBuffers[] = "8";
-constexpr float kCinemaHudReferenceScale = 1.30f;
-constexpr int kCinemaHudReferenceShift = -72;
+constexpr float kCinemaHudReferenceScale = 1.00f;
+constexpr int kCinemaHudReferenceShift = 0;
 constexpr float kFullVrHudReferenceScale = 1.00f;
 // The V1022 physical HUD plane makes shift * size the inverse-depth authority.
 // Full VR now defaults directly to gameplay's validated -36 at size 1.0:
@@ -1379,9 +1379,9 @@ LoadResult LoadConfiguration(const ConfigPaths& paths) {
         0.3f, 1.5f);
     result.state.cinema_aspect = ReadCinemaAspect(*vr);
     result.state.cinema_hud_scale = std::clamp(
-        ReadFloat(*vr, "openxr", "cinema_hud_scale", 1.30f), 0.5f, 1.5f);
+        ReadFloat(*vr, "openxr", "cinema_hud_scale", 1.00f), 0.5f, 1.5f);
     result.state.cinema_hud_convergence_offset = std::clamp(
-        ReadInt(*vr, "openxr", "cinema_hud_stereo_shift_px", -72) -
+        ReadInt(*vr, "openxr", "cinema_hud_stereo_shift_px", 0) -
             CinemaHudConvergenceShift(result.state.cinema_hud_scale, 0),
         -64, 64);
     result.state.full_vr_hud_scale = std::clamp(
