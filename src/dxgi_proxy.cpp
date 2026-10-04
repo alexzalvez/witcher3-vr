@@ -244,8 +244,9 @@ struct Config {
     bool steady_icons{false};
     float menu_distance{1.5f};
     float cinema_render_stereo_strength{1.0f};
-    int cinema_hud_stereo_shift_px{-72};
-    float manual_cinema_hud_scale{1.25f};
+    int cinema_hud_stereo_shift_px{0};
+    float cinema_hud_scale{1.00f};
+    float manual_cinema_hud_scale{1.00f};
     int full_vr_hud_stereo_shift_px{-36};
     float full_vr_hud_scale{1.00f};
     bool hmd_freelook{false};
@@ -11283,11 +11284,14 @@ void load_config() {
             read_ini_float(
                 "openxr", "cinema_render_stereo_strength", 1.0f),
             0.0f, 1.0f);
+        g_config.cinema_hud_scale = std::clamp(
+            read_ini_float("openxr", "cinema_hud_scale", 1.00f),
+            0.5f, 2.0f);
         g_config.cinema_hud_stereo_shift_px = std::clamp(
-            read_ini_int("openxr", "cinema_hud_stereo_shift_px", -72),
+            read_ini_int("openxr", "cinema_hud_stereo_shift_px", 0),
             -256, 256);
         g_config.manual_cinema_hud_scale = std::clamp(
-            read_ini_float("openxr", "manual_cinema_hud_scale", 1.25f),
+            read_ini_float("openxr", "manual_cinema_hud_scale", 1.00f),
             0.5f, 1.5f);
         g_config.full_vr_hud_stereo_shift_px = std::clamp(
             read_ini_int("openxr", "full_vr_hud_stereo_shift_px", -36),
@@ -17200,12 +17204,12 @@ HRESULT STDMETHODCALLTYPE hook_create_graphics_pipeline_state(
             IDxcBlob* auto_cinema_eye0_shader =
                 compile_hud_composite_pixel_shader(
                     g_config.cinema_hud_stereo_shift_px,
-                    g_config.hud_size * 1.30f,
+                    g_config.hud_size * g_config.cinema_hud_scale,
                     g_config.cinema_aspect_ratio);
             IDxcBlob* auto_cinema_eye1_shader =
                 compile_hud_composite_pixel_shader(
                     -g_config.cinema_hud_stereo_shift_px,
-                    g_config.hud_size * 1.30f,
+                    g_config.hud_size * g_config.cinema_hud_scale,
                     g_config.cinema_aspect_ratio);
             IDxcBlob* scene_shader = retained_hud_projection_route_configured()
                 ? compile_mode3_scene_only_pixel_shader()
@@ -36932,7 +36936,7 @@ bool composite_mode3_hud_into_projection_image(
         g_config.hud_size *
             (cinema_projection
                 ? (cinema_parameters->automatic
-                    ? 1.30f
+                    ? g_config.cinema_hud_scale
                     : g_config.manual_cinema_hud_scale)
                 : automatic_full_vr_cutscene
                 ? g_config.full_vr_hud_scale
