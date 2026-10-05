@@ -33,7 +33,7 @@ function W3VRHudEditor_Version(): string
 
 function W3VRHudEditor_DebugEnabled(): bool
 {
-  return true;
+  return false;
 }
 
 function W3VRHudEditor_DebugInterval(): float
@@ -962,14 +962,6 @@ class W3VRHudEditorController
 
     if (initialized && !registryReadyProbeShown && thePlayer)
     {
-      thePlayer.DisplayHudMessage(
-        "W3VR HUD Editor ready | panels " +
-        IntToString(W3VRHudEditor_LogicalPanelCount()) + "/" +
-        IntToString(W3VRHudEditor_LogicalPanelCount()) + " | HUD live " +
-        IntToString(GetLiveModuleCount()) + "/" +
-        IntToString(W3VRHudEditor_LiveModuleCount()) + " | context " +
-        NameToString(theInput.GetContext())
-      );
       registryReadyProbeShown = true;
     }
 
