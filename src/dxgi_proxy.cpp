@@ -43066,20 +43066,6 @@ static bool cinema_projection_anchor_valid{};
                             cinema_projection_anchor,
                             cinema_projection_panel_width,
                             cinema_projection_panel_height);
-                } else if (fullscreen_menu && primary_source != nullptr && cinema_projection_anchor_valid) {
-                    ID3D12Resource* menu_sources[2]{primary_source, primary_source};
-                    const float panel_width = 1.6f * g_config.menu_scale;
-                    const float source_height_over_width = copy_width > 0
-                        ? static_cast<float>(copy_height) / static_cast<float>(copy_width)
-                        : 1.0f;
-                    const float panel_height = panel_width * source_height_over_width;
-                    cinema_projection_panel_ready =
-                        render_anchored_cinema_projection(
-                            swapchain, image_index,
-                            menu_sources, current_panel_views,
-                            cinema_projection_anchor,
-                            panel_width,
-                            panel_height);
                 }
 
                 copied_game = fit_projection_ready;
@@ -43839,8 +43825,8 @@ const CinemaHudProjectionParameters cinema_hud_parameters{
 if (!submitted) {
         end_info.layerCount = 0;
         end_info.layers = nullptr;
-    } else if ((fullscreen_menu || cinema_panel) && cinema_projection_panel_ready) {
-        // Pantalla de cine 3D fija con proyeccion estereo nativa para cinematograficas y menus
+    } else if (cinema_panel && cinema_projection_panel_ready) {
+        // Pantalla de cine 3D fija con proyeccion estereo nativa para cinematograficas
         end_info.layerCount = 1;
         end_info.layers = projection_layers;
     } else if (fullscreen_menu) {
