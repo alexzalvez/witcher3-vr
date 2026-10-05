@@ -2729,6 +2729,7 @@ struct SequentialDlssHistoryBinding {
 };
 std::mutex g_sequential_dlss_handle_mutex{};
 std::atomic<uint32_t> g_post_loading_dlss_watchdog_frames{0};
+std::atomic<bool> g_post_loading_dlss_eye0_reconciled{true};
 const NVSDK_NGX_Handle* g_sequential_dlss_latest_histories[2]{};
 uint64_t g_sequential_dlss_latest_history_generations[2]{};
 bool g_sequential_dlss_latest_history_needs_reset[2]{};
@@ -19648,6 +19649,7 @@ void arm_post_loading_dlss_watchdog(uint64_t present) {
         return;
     }
     g_post_loading_dlss_watchdog_frames.store(60, std::memory_order_release);
+    g_post_loading_dlss_eye0_reconciled.store(false, std::memory_order_release);
     std::scoped_lock lock{g_sequential_dlss_handle_mutex};
     for (uint32_t eye = 0; eye < 2; ++eye) {
         g_sequential_dlss_latest_history_needs_reset[eye] = true;
@@ -25618,11 +25620,27 @@ uint32_t __fastcall hook_engine_upscaler_pipeline(
         g_sequential_pipeline_eye = g_engine_render_eye;
     }
 
-    const bool watchdog_active = g_post_loading_dlss_watchdog_frames.load(std::memory_order_relaxed) > 0;
+    const bool needs_reconciliation = !g_post_loading_dlss_eye0_reconciled.load(std::memory_order_relaxed);
+    const bool is_loading = g_engine_loading_screen_video_active.load(std::memory_order_relaxed);
+    const bool watchdog_active = g_post_loading_dlss_watchdog_frames.load(std::memory_order_relaxed) > 0 ||
+        (needs_reconciliation && !is_loading);
+
     if (dlss_sequential_mode_active() && (g_engine_render_eye <= 0 || watchdog_active) &&
         frame_data != nullptr) {
         if (watchdog_active && g_engine_render_eye == 1) {
-            g_post_loading_dlss_watchdog_frames.fetch_sub(1, std::memory_order_relaxed);
+            if (g_post_loading_dlss_watchdog_frames.load(std::memory_order_relaxed) > 0) {
+                g_post_loading_dlss_watchdog_frames.fetch_sub(1, std::memory_order_relaxed);
+            }
+        }
+        if (needs_reconciliation && !is_loading && g_engine_render_eye == 0 && g_engine_render_pair_id > 0) {
+            static std::atomic<uint32_t> s_eye0_clean_frames{0};
+            if (s_eye0_clean_frames.fetch_add(1, std::memory_order_relaxed) >= 15) {
+                s_eye0_clean_frames.store(0, std::memory_order_relaxed);
+                g_post_loading_dlss_eye0_reconciled.store(true, std::memory_order_release);
+                log_line("Post-loading Stereo-DLSS eye0 reconciled present=%llu pair=%llu",
+                    static_cast<unsigned long long>(g_present_count.load(std::memory_order_relaxed)),
+                    static_cast<unsigned long long>(g_engine_render_pair_id));
+            }
         }
         __try {
             constexpr uintptr_t kStreamlineInterfaceRva = 0x057F59E0;
